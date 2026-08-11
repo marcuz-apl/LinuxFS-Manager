@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -eu
+
+HOOK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ROOT=$(CDPATH= cd -- "$HOOK_DIR/.." && pwd)
+. "$HOOK_DIR/versioning.sh"
+
+bump_version
