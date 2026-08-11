@@ -132,6 +132,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "linuxfs-app"
+version = "0.1.0"
+dependencies = [
+ "linuxfs-core",
+]
+
+[[package]]
 name = "linuxfs-core"
 version = "0.1.0"
 
