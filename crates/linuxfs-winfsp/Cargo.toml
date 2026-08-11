@@ -10,8 +10,10 @@ linuxfs-core = { path = "../linuxfs-core" }
 
 [lints]
 workspace = true
+
 [target.'cfg(windows)'.dependencies]
 winfsp = { version = "0.13", default-features = false, features = ["delayload"] }
+winfsp-sys = { version = "0.12", default-features = false }
 
 [target.'cfg(windows)'.build-dependencies]
 winfsp = { version = "0.13", default-features = false, features = ["delayload"] }

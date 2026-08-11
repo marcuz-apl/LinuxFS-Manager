@@ -157,6 +157,7 @@ version = "0.1.0"
 dependencies = [
  "linuxfs-core",
  "winfsp",
+ "winfsp-sys",
 ]
 
 [[package]]
