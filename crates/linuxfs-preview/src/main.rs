@@ -117,17 +117,32 @@ fn main() -> Result<(), slint::PlatformError> {
 #[cfg(windows)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use linuxfs_app::{
-        ImageSourceProvider, MountService, SourceProvider, WindowsImageMountService,
+        ImageSourceProvider, MountService, SourceProvider, SourceViewModel,
+        WindowsImageMountService,
+        runtime::{BackgroundOperation, spawn_background},
     };
     use std::{
         env,
         sync::{Arc, Mutex},
+        time::Duration,
     };
+
+    enum PendingOperation {
+        Probe(BackgroundOperation<SourceViewModel>, String),
+        Mount(BackgroundOperation<String>),
+        Unmount(BackgroundOperation<()>),
+    }
+    #[allow(clippy::large_enum_variant)]
+    enum CompletedOperation {
+        Probe(Result<(SourceViewModel, String), String>),
+        Mount(Result<String, String>),
+        Unmount(Result<(), String>),
+    }
 
     let image = env::args_os()
         .nth(1)
         .map(|path| path.to_string_lossy().into_owned());
-    let mut provider = ImageSourceProvider::new();
+    let provider = Arc::new(Mutex::new(ImageSourceProvider::new()));
     let service = Arc::new(Mutex::new(WindowsImageMountService::new("L:")));
     let _winfsp = winfsp::winfsp_init()?;
     let window = MainWindow::new()?;
@@ -135,152 +150,120 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     window.set_image_path(initial_path.clone().into());
     let state = Arc::new(Mutex::new(UiState::new(&initial_path)));
     let current_source = Arc::new(Mutex::new(None::<linuxfs_app::SourceViewModel>));
+    let pending = Arc::new(Mutex::new(None::<PendingOperation>));
 
-    let reload = {
-        let state = Arc::clone(&state);
-        let source_slot = Arc::clone(&current_source);
+    let start_probe: Arc<dyn Fn(String)> = {
+        let provider = Arc::clone(&provider);
+        let pending = Arc::clone(&pending);
         let weak = window.as_weak();
-        move |path: String, provider: &mut ImageSourceProvider| {
-            let result = UiState::validate_path(&path)
-                .map_err(|error| error.to_owned())
-                .and_then(|_| {
-                    provider
-                        .open_image(&path)
-                        .map_err(|error| error.to_string())
-                });
-            if let Some(window) = weak.upgrade() {
-                match result {
-                    Ok(source) => {
-                        let filesystem = source
-                            .filesystem_type
-                            .clone()
-                            .unwrap_or_else(|| "Unknown".to_owned());
-                        let mut ui = state.lock().expect("UI state lock");
-                        ui.image_path = path;
-                        ui.source_name = source.display_name.clone();
-                        ui.set_compatible(&filesystem, &source.source_description);
-                        window.set_source_name(ui.source_name.clone().into());
-                        window.set_source_details(ui.source_details.clone().into());
-                        window.set_status("Source refreshed read-only".into());
-                        window.set_can_mount(ui.can_mount);
-                        window.set_can_unmount(ui.can_unmount);
-                        *source_slot.lock().expect("source lock") = Some(source);
-                    }
-                    Err(error) => {
-                        window.set_source_name("No compatible source".into());
-                        window.set_source_details("The image could not be opened safely.".into());
-                        window.set_status(format!("Refresh failed: {error}").into());
-                        window.set_can_mount(false);
-                        window.set_can_unmount(false);
-                        *source_slot.lock().expect("source lock") = None;
-                    }
+        Arc::new(move |path: String| {
+            if let Err(error) = UiState::validate_path(&path) {
+                if let Some(window) = weak.upgrade() {
+                    window.set_status(format!("Refresh failed: {error}").into());
                 }
+                return;
             }
-        }
+            let provider_for_operation = Arc::clone(&provider);
+            let probe_path = path.clone();
+            let operation = spawn_background(move || {
+                provider_for_operation
+                    .lock()
+                    .expect("provider lock poisoned")
+                    .open_image(&probe_path)
+            });
+            *pending.lock().expect("pending operation lock") =
+                Some(PendingOperation::Probe(operation, path));
+            if let Some(window) = weak.upgrade() {
+                window.set_status("Opening image read-only…".into());
+            }
+        })
     };
-    if !initial_path.trim().is_empty() {
-        reload(initial_path, &mut provider);
-    }
-
-    let provider = Arc::new(Mutex::new(provider));
-    let reload_for_refresh = Arc::new(reload);
     let weak = window.as_weak();
-    let provider_for_refresh = Arc::clone(&provider);
     let state_for_refresh = Arc::clone(&state);
-    let reload_for_refresh_handler = Arc::clone(&reload_for_refresh);
+    let start_probe_for_refresh = start_probe.clone();
     window.on_refresh_clicked(move || {
         let path = state_for_refresh
             .lock()
             .expect("UI state lock")
             .image_path
             .clone();
-        reload_for_refresh_handler(
-            path,
-            &mut provider_for_refresh.lock().expect("provider lock"),
-        );
         if let Some(window) = weak.upgrade() {
-            window.set_status("Refresh completed".into());
+            window.set_status("Refreshing read-only source…".into());
         }
+        start_probe_for_refresh(path);
     });
-    let reload_for_open = Arc::clone(&reload_for_refresh);
-    let provider_for_open = Arc::clone(&provider);
     let state_for_open = Arc::clone(&state);
+    let start_probe_for_open = start_probe.clone();
     window.on_open_image_clicked(move || {
         let path = state_for_open
             .lock()
             .expect("UI state lock")
             .image_path
             .clone();
-        reload_for_open(path, &mut provider_for_open.lock().expect("provider lock"));
+        start_probe_for_open(path);
     });
     let weak = window.as_weak();
     let source_slot = Arc::clone(&current_source);
     let service_for_mount = Arc::clone(&service);
-    let state_for_mount = Arc::clone(&state);
+    let pending_for_mount = Arc::clone(&pending);
     window.on_mount_clicked(move || {
-        let result = source_slot
+        let source = source_slot
             .lock()
             .expect("source lock")
             .as_ref()
             .cloned()
-            .ok_or_else(|| "no source loaded".to_owned())
-            .and_then(|source| {
-                service_for_mount
+            .ok_or_else(|| "no source loaded".to_owned());
+        let service_for_operation = Arc::clone(&service_for_mount);
+        let operation = match source {
+            Ok(source) => spawn_background(move || {
+                service_for_operation
                     .lock()
-                    .map_err(|_| "mount service lock poisoned".to_owned())
-                    .and_then(|mut service| {
-                        service.mount(&source).map_err(|error| error.to_string())
-                    })
-            });
-        if let Some(window) = weak.upgrade() {
-            match result {
-                Ok(point) => {
-                    state_for_mount
-                        .lock()
-                        .expect("UI state lock")
-                        .set_mounted(&point);
-                    window.set_status(
-                        format!("Mounted read-only on {point} — source unchanged").into(),
-                    );
-                    window.set_can_mount(false);
-                    window.set_can_unmount(true);
+                    .expect("mount service lock poisoned")
+                    .mount(&source)
+            }),
+            Err(error) => {
+                if let Some(window) = weak.upgrade() {
+                    window.set_status(format!("Mount failed: {error}").into());
                 }
-                Err(error) => window.set_status(format!("Mount failed: {error}").into()),
+                return;
             }
+        };
+        *pending_for_mount.lock().expect("pending operation lock") =
+            Some(PendingOperation::Mount(operation));
+        if let Some(window) = weak.upgrade() {
+            window.set_status("Mounting read-only…".into());
         }
     });
     let weak = window.as_weak();
     let source_slot = Arc::clone(&current_source);
     let service_for_unmount = Arc::clone(&service);
-    let state_for_unmount = Arc::clone(&state);
+    let pending_for_unmount = Arc::clone(&pending);
     window.on_unmount_clicked(move || {
-        let result = source_slot
+        let source = source_slot
             .lock()
             .expect("source lock")
             .as_ref()
             .cloned()
-            .ok_or_else(|| "no source loaded".to_owned())
-            .and_then(|source| {
-                service_for_unmount
+            .ok_or_else(|| "no source loaded".to_owned());
+        let service_for_operation = Arc::clone(&service_for_unmount);
+        let operation = match source {
+            Ok(source) => spawn_background(move || {
+                service_for_operation
                     .lock()
-                    .map_err(|_| "mount service lock poisoned".to_owned())
-                    .and_then(|mut service| {
-                        service.unmount(&source).map_err(|error| error.to_string())
-                    })
-            });
-        if let Some(window) = weak.upgrade() {
-            match result {
-                Ok(()) => {
-                    state_for_unmount
-                        .lock()
-                        .expect("UI state lock")
-                        .set_unmounted();
-                    window.set_status("Unmount completed".into());
-                    window.set_can_mount(true);
-                    window.set_can_unmount(false);
+                    .expect("mount service lock poisoned")
+                    .unmount(&source)
+            }),
+            Err(error) => {
+                if let Some(window) = weak.upgrade() {
+                    window.set_status(format!("Unmount failed: {error}").into());
                 }
-                Err(error) => window.set_status(format!("Unmount failed: {error}").into()),
+                return;
             }
+        };
+        *pending_for_unmount.lock().expect("pending operation lock") =
+            Some(PendingOperation::Unmount(operation));
+        if let Some(window) = weak.upgrade() {
+            window.set_status("Unmounting…".into());
         }
     });
     let weak = window.as_weak();
@@ -297,6 +280,102 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
     });
+
+    let timer = slint::Timer::default();
+    let pending_for_timer = Arc::clone(&pending);
+    let state_for_timer = Arc::clone(&state);
+    let source_for_timer = Arc::clone(&current_source);
+    let weak_for_timer = window.as_weak();
+    timer.start(
+        slint::TimerMode::Repeated,
+        Duration::from_millis(50),
+        move || {
+            let Some(mut operation) = pending_for_timer
+                .lock()
+                .expect("pending operation lock")
+                .take()
+            else {
+                return;
+            };
+            let completed = match &mut operation {
+                PendingOperation::Probe(operation, path) => operation.try_receive().map(|result| {
+                    CompletedOperation::Probe(
+                        result
+                            .map(|source| (source, path.clone()))
+                            .map_err(|error| error.to_string()),
+                    )
+                }),
+                PendingOperation::Mount(operation) => operation.try_receive().map(|result| {
+                    CompletedOperation::Mount(result.map_err(|error| error.to_string()))
+                }),
+                PendingOperation::Unmount(operation) => operation.try_receive().map(|result| {
+                    CompletedOperation::Unmount(result.map_err(|error| error.to_string()))
+                }),
+            };
+            if completed.is_none() {
+                *pending_for_timer.lock().expect("pending operation lock") = Some(operation);
+                return;
+            }
+            let completed = completed.expect("completed operation");
+            if let Some(window) = weak_for_timer.upgrade() {
+                match completed {
+                    CompletedOperation::Probe(Ok((source, path))) => {
+                        let filesystem = source
+                            .filesystem_type
+                            .clone()
+                            .unwrap_or_else(|| "Unknown".to_owned());
+                        let mut ui = state_for_timer.lock().expect("UI state lock");
+                        ui.image_path = path;
+                        ui.source_name = source.display_name.clone();
+                        ui.set_compatible(&filesystem, &source.source_description);
+                        window.set_source_name(ui.source_name.clone().into());
+                        window.set_source_details(ui.source_details.clone().into());
+                        window.set_can_mount(ui.can_mount);
+                        window.set_can_unmount(ui.can_unmount);
+                        *source_for_timer.lock().expect("source lock") = Some(source);
+                        window.set_status("Source refreshed read-only".into());
+                    }
+                    CompletedOperation::Mount(Ok(point)) => {
+                        state_for_timer
+                            .lock()
+                            .expect("UI state lock")
+                            .set_mounted(&point);
+                        window.set_status(
+                            format!("Mounted read-only on {point} — source unchanged").into(),
+                        );
+                        window.set_can_mount(false);
+                        window.set_can_unmount(true);
+                    }
+                    CompletedOperation::Unmount(Ok(())) => {
+                        state_for_timer
+                            .lock()
+                            .expect("UI state lock")
+                            .set_unmounted();
+                        window.set_status("Unmount completed".into());
+                        window.set_can_mount(true);
+                        window.set_can_unmount(false);
+                    }
+                    CompletedOperation::Probe(Err(error)) => {
+                        window.set_status(format!("Refresh failed: {error}").into());
+                        window.set_source_name("No compatible source".into());
+                        window.set_source_details("The image could not be opened safely.".into());
+                        window.set_can_mount(false);
+                        window.set_can_unmount(false);
+                        *source_for_timer.lock().expect("source lock") = None;
+                    }
+                    CompletedOperation::Mount(Err(error)) => {
+                        window.set_status(format!("Mount failed: {error}").into())
+                    }
+                    CompletedOperation::Unmount(Err(error)) => {
+                        window.set_status(format!("Unmount failed: {error}").into())
+                    }
+                }
+            }
+        },
+    );
+    if !initial_path.trim().is_empty() {
+        start_probe(initial_path);
+    }
     window.run()?;
     Ok(())
 }
