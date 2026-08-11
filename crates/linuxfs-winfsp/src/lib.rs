@@ -1,3 +1,6 @@
+#[cfg(windows)]
+pub mod native;
+
 use linuxfs_core::{
     DirectoryEntry, FilesystemInfo, FsPath, NodeMetadata, ReadOnlyFilesystem, Result,
 };
