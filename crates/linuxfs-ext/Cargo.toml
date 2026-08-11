@@ -11,3 +11,5 @@ linuxfs-core = { path = "../linuxfs-core" }
 
 [lints]
 workspace = true
+[dev-dependencies]
+linuxfs-storage = { path = "../linuxfs-storage" }

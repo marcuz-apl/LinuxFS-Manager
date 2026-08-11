@@ -43,6 +43,7 @@ version = "0.1.0"
 dependencies = [
  "ext4-view",
  "linuxfs-core",
+ "linuxfs-storage",
 ]
 
 [[package]]
