@@ -5,6 +5,59 @@ use linuxfs_core::{
     DirectoryEntry, FilesystemInfo, FsPath, NodeMetadata, ReadOnlyFilesystem, Result,
 };
 
+/// Result of checking whether the WinFsp runtime can be loaded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WinFspStatus {
+    /// The WinFsp runtime is available to this process.
+    Available,
+    /// WinFsp is not available, with a stable diagnostic reason.
+    Unavailable { reason: WinFspUnavailableReason },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WinFspUnavailableReason {
+    /// This diagnostic was called on a non-Windows target.
+    UnsupportedPlatform,
+    /// The WinFsp runtime could not be loaded.
+    RuntimeUnavailable,
+}
+
+impl WinFspStatus {
+    pub fn is_available(&self) -> bool {
+        matches!(self, Self::Available)
+    }
+}
+
+/// Checks WinFsp availability without installing, starting, stopping, or changing anything.
+pub fn check_winfsp() -> WinFspStatus {
+    platform::check()
+}
+
+#[cfg(windows)]
+mod platform {
+    use super::{WinFspStatus, WinFspUnavailableReason};
+
+    pub fn check() -> WinFspStatus {
+        match winfsp::winfsp_init() {
+            Ok(_init) => WinFspStatus::Available,
+            Err(_) => WinFspStatus::Unavailable {
+                reason: WinFspUnavailableReason::RuntimeUnavailable,
+            },
+        }
+    }
+}
+
+#[cfg(not(windows))]
+mod platform {
+    use super::{WinFspStatus, WinFspUnavailableReason};
+
+    pub fn check() -> WinFspStatus {
+        WinFspStatus::Unavailable {
+            reason: WinFspUnavailableReason::UnsupportedPlatform,
+        }
+    }
+}
+
 /// Windows filesystem requests handled by the adapter boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WinOperation {
@@ -113,6 +166,42 @@ where
 mod tests {
     use super::*;
     use linuxfs_core::{ErrorCategory, FileKind};
+
+    #[cfg(not(windows))]
+    #[test]
+    fn diagnostic_is_structured_and_read_only_on_this_platform() {
+        let status = check_winfsp();
+        assert!(!status.is_available());
+        assert_eq!(
+            status,
+            WinFspStatus::Unavailable {
+                reason: WinFspUnavailableReason::UnsupportedPlatform
+            }
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn diagnostic_returns_a_known_windows_status() {
+        assert!(matches!(
+            check_winfsp(),
+            WinFspStatus::Available
+                | WinFspStatus::Unavailable {
+                    reason: WinFspUnavailableReason::RuntimeUnavailable
+                }
+        ));
+    }
+
+    #[test]
+    fn availability_status_reports_only_available_as_available() {
+        assert!(WinFspStatus::Available.is_available());
+        assert!(
+            !WinFspStatus::Unavailable {
+                reason: WinFspUnavailableReason::RuntimeUnavailable
+            }
+            .is_available()
+        );
+    }
 
     #[test]
     fn read_operations_are_allowed() {
