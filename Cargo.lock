@@ -138,6 +138,7 @@ dependencies = [
  "linuxfs-core",
  "linuxfs-ext",
  "linuxfs-storage",
+ "linuxfs-windows",
 ]
 
 [[package]]
@@ -155,6 +156,13 @@ dependencies = [
 
 [[package]]
 name = "linuxfs-storage"
+version = "0.1.0"
+dependencies = [
+ "linuxfs-core",
+]
+
+[[package]]
+name = "linuxfs-windows"
 version = "0.1.0"
 dependencies = [
  "linuxfs-core",

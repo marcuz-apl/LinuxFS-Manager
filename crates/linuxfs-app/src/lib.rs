@@ -432,3 +432,50 @@ impl SourceProvider for ImageSourceProvider {
         })
     }
 }
+
+#[cfg(windows)]
+pub struct WindowsSourceProvider {
+    image_provider: ImageSourceProvider,
+}
+
+#[cfg(windows)]
+impl Default for WindowsSourceProvider {
+    fn default() -> Self {
+        Self {
+            image_provider: ImageSourceProvider::new(),
+        }
+    }
+}
+
+#[cfg(windows)]
+impl WindowsSourceProvider {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[cfg(windows)]
+impl SourceProvider for WindowsSourceProvider {
+    fn refresh(&mut self) -> linuxfs_core::Result<Vec<SourceViewModel>> {
+        Ok(linuxfs_windows::discover_physical_disks(32)
+            .into_iter()
+            .map(|disk| SourceViewModel {
+                id: SourceId((1_u64 << 63) | u64::from(disk.index)),
+                kind: SourceKind::PhysicalDisk,
+                display_name: format!("PhysicalDrive{}", disk.index),
+                source_description: disk.source_path.to_string_lossy().into_owned(),
+                filesystem_type: None,
+                label: None,
+                uuid: None,
+                size_bytes: Some(disk.size_bytes),
+                status: SourceStatus::Detected,
+                mount_point: None,
+                read_only: true,
+            })
+            .collect())
+    }
+
+    fn open_image(&mut self, path: &str) -> linuxfs_core::Result<SourceViewModel> {
+        self.image_provider.open_image(path)
+    }
+}
