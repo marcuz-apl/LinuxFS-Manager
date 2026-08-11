@@ -17,3 +17,6 @@ winfsp-sys = { version = "0.12", default-features = false }
 
 [target.'cfg(windows)'.build-dependencies]
 winfsp = { version = "0.13", default-features = false, features = ["delayload"] }
+[dev-dependencies]
+linuxfs-ext = { path = "../linuxfs-ext" }
+linuxfs-storage = { path = "../linuxfs-storage" }

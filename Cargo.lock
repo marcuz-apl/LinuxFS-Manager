@@ -173,6 +173,8 @@ name = "linuxfs-winfsp"
 version = "0.1.0"
 dependencies = [
  "linuxfs-core",
+ "linuxfs-ext",
+ "linuxfs-storage",
  "winfsp",
  "winfsp-sys",
 ]
