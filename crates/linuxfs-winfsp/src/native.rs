@@ -12,7 +12,7 @@ use winfsp::{
 };
 use winfsp_sys::{FILE_ACCESS_RIGHTS, FILE_FLAGS_AND_ATTRIBUTES};
 
-use crate::ReadOnlyDispatcher;
+use crate::{MountHost, ReadOnlyDispatcher};
 
 const ERROR_ACCESS_DENIED: u32 = 5;
 const ERROR_FILE_NOT_FOUND: u32 = 2;
@@ -252,6 +252,77 @@ where
     )?)
 }
 
+/// Native host implementation used by the platform-independent mount manager.
+pub struct NativeMountHost<F>
+where
+    F: ReadOnlyFilesystem + Send + Sync,
+{
+    host: FileSystemHost<ReadOnlyContext<F>>,
+    mount_point: String,
+    started: bool,
+}
+
+impl<F> NativeMountHost<F>
+where
+    F: ReadOnlyFilesystem + Send + Sync,
+{
+    pub fn new(
+        filesystem: F,
+        filesystem_name: &str,
+        mount_point: impl Into<String>,
+    ) -> winfsp::Result<Self> {
+        Ok(Self {
+            host: new_host(filesystem, filesystem_name)?,
+            mount_point: mount_point.into(),
+            started: false,
+        })
+    }
+}
+
+impl<F> MountHost for NativeMountHost<F>
+where
+    F: ReadOnlyFilesystem + Send + Sync,
+{
+    fn mount(&mut self) -> linuxfs_core::Result<()> {
+        if self.started {
+            return Err(linuxfs_core::Error::new(
+                linuxfs_core::ErrorCategory::WinFspFailure,
+                "WinFsp host is already started",
+            ));
+        }
+        self.host
+            .start()
+            .map_err(|error| map_host_error(error.into()))?;
+        self.started = true;
+        if let Err(error) = self.host.mount(&self.mount_point) {
+            self.host.stop();
+            self.started = false;
+            return Err(map_host_error(error.into()));
+        }
+        Ok(())
+    }
+
+    fn unmount(&mut self) -> linuxfs_core::Result<()> {
+        if !self.started {
+            return Err(linuxfs_core::Error::new(
+                linuxfs_core::ErrorCategory::WinFspFailure,
+                "WinFsp host is not started",
+            ));
+        }
+        self.host.unmount();
+        self.host.stop();
+        self.started = false;
+        Ok(())
+    }
+}
+
+fn map_host_error(error: FspError) -> linuxfs_core::Error {
+    linuxfs_core::Error::with_source(
+        linuxfs_core::ErrorCategory::WinFspFailure,
+        "WinFsp mount operation failed",
+        error,
+    )
+}
 fn map_error(error: linuxfs_core::Error) -> FspError {
     match error.category() {
         linuxfs_core::ErrorCategory::PermissionDenied => FspError::WIN32(ERROR_ACCESS_DENIED),
