@@ -1,7 +1,10 @@
 use std::{error::Error as StdError, sync::Arc};
 
-use ext4_view::{Ext4, Ext4Read};
-use linuxfs_core::{BlockReader, Error, ErrorCategory, FilesystemInfo, Result};
+use ext4_view::{Ext4, Ext4Error, Ext4Read};
+use linuxfs_core::{
+    BlockReader, DirectoryEntry, Error, ErrorCategory, FileKind, FilesystemInfo, FsPath,
+    NodeMetadata, ReadOnlyFilesystem, Result,
+};
 
 struct ReaderAdapter {
     reader: Arc<dyn BlockReader>,
@@ -42,11 +45,13 @@ impl ExtReadOnlyBackend {
     }
 
     pub fn info(&self) -> Result<FilesystemInfo> {
-        let _filesystem = Self::load(&self.reader)?;
+        let filesystem = Self::load(&self.reader)?;
+        let label = filesystem.label().to_str().ok().map(str::to_owned);
+        let uuid = Some(*filesystem.uuid().as_bytes());
         Ok(FilesystemInfo {
             filesystem_type: "ext2/ext3/ext4".to_owned(),
-            label: None,
-            uuid: None,
+            label,
+            uuid,
         })
     }
 
@@ -54,20 +59,120 @@ impl ExtReadOnlyBackend {
         Ext4::load(Box::new(ReaderAdapter {
             reader: Arc::clone(reader),
         }))
-        .map_err(|error| {
-            Error::new(
-                ErrorCategory::FilesystemCorrupt,
-                format!("Ext filesystem rejected: {error}"),
-            )
+        .map_err(map_error)
+    }
+
+    fn metadata(&self, path: &FsPath) -> Result<NodeMetadata> {
+        let filesystem = Self::load(&self.reader)?;
+        let metadata = filesystem.metadata(path.as_str()).map_err(map_error)?;
+        Ok(NodeMetadata {
+            kind: file_kind(metadata.file_type()),
+            size: metadata.len(),
+            permissions: metadata.mode(),
+            uid: metadata.uid(),
+            gid: metadata.gid(),
         })
     }
+}
+
+impl ReadOnlyFilesystem for ExtReadOnlyBackend {
+    fn info(&self) -> Result<FilesystemInfo> {
+        self.info()
+    }
+    fn lookup(&self, path: &FsPath) -> Result<NodeMetadata> {
+        self.metadata(path)
+    }
+
+    fn read_dir(&self, path: &FsPath) -> Result<Vec<DirectoryEntry>> {
+        let filesystem = Self::load(&self.reader)?;
+        filesystem
+            .read_dir(path.as_str())
+            .map_err(map_error)?
+            .map(|entry| {
+                let entry = entry.map_err(map_error)?;
+                let metadata = entry.metadata().map_err(map_error)?;
+                Ok(DirectoryEntry {
+                    name: entry
+                        .file_name()
+                        .as_str()
+                        .map_err(|_| {
+                            Error::new(
+                                ErrorCategory::FilesystemCorrupt,
+                                "Ext directory name is not valid UTF-8",
+                            )
+                        })?
+                        .to_owned(),
+                    metadata: NodeMetadata {
+                        kind: file_kind(metadata.file_type()),
+                        size: metadata.len(),
+                        permissions: metadata.mode(),
+                        uid: metadata.uid(),
+                        gid: metadata.gid(),
+                    },
+                })
+            })
+            .collect()
+    }
+
+    fn read_file_at(&self, path: &FsPath, offset: u64, destination: &mut [u8]) -> Result<usize> {
+        let filesystem = Self::load(&self.reader)?;
+        let mut file = filesystem.open(path.as_str()).map_err(map_error)?;
+        file.seek_to(offset).map_err(map_error)?;
+        let mut total = 0;
+        while total < destination.len() {
+            let read = file
+                .read_bytes(&mut destination[total..])
+                .map_err(map_error)?;
+            if read == 0 {
+                break;
+            }
+            total += read;
+        }
+        Ok(total)
+    }
+
+    fn read_link(&self, path: &FsPath) -> Result<FsPath> {
+        let filesystem = Self::load(&self.reader)?;
+        let target = filesystem.read_link(path.as_str()).map_err(map_error)?;
+        FsPath::parse(target.to_str().map_err(|_| {
+            Error::new(
+                ErrorCategory::FilesystemCorrupt,
+                "Ext symlink target is not valid UTF-8",
+            )
+        })?)
+    }
+}
+
+fn file_kind(file_type: ext4_view::FileType) -> FileKind {
+    if file_type.is_dir() {
+        FileKind::Directory
+    } else if file_type.is_symlink() {
+        FileKind::Symlink
+    } else if file_type.is_regular_file() {
+        FileKind::Regular
+    } else {
+        FileKind::Other
+    }
+}
+
+fn map_error(error: Ext4Error) -> Error {
+    let category = match &error {
+        Ext4Error::Io(_) => ErrorCategory::StorageAccess,
+        Ext4Error::Incompatible(_) => ErrorCategory::UnsupportedFeature,
+        Ext4Error::Encrypted => ErrorCategory::UnsupportedFilesystem,
+        Ext4Error::Corrupt(_) => ErrorCategory::FilesystemCorrupt,
+        _ => ErrorCategory::FilesystemCorrupt,
+    };
+    Error::new(
+        category,
+        format!("Ext filesystem operation failed: {error}"),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use linuxfs_core::BlockReader;
-
     struct MemoryReader {
         bytes: Vec<u8>,
     }
@@ -83,7 +188,6 @@ mod tests {
             Ok(())
         }
     }
-
     #[test]
     fn rejects_truncated_source_as_structured_error() {
         let reader: Arc<dyn BlockReader> = Arc::new(MemoryReader {
@@ -91,9 +195,9 @@ mod tests {
         });
         let result = ExtReadOnlyBackend::open(reader);
         assert!(result.is_err());
-        assert_eq!(
+        assert!(matches!(
             result.err().map(|error| error.category()),
-            Some(ErrorCategory::FilesystemCorrupt)
-        );
+            Some(ErrorCategory::StorageAccess | ErrorCategory::FilesystemCorrupt)
+        ));
     }
 }

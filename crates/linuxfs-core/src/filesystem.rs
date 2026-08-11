@@ -83,6 +83,7 @@ pub trait ReadOnlyFilesystem {
     fn info(&self) -> Result<FilesystemInfo>;
     fn lookup(&self, path: &FsPath) -> Result<NodeMetadata>;
     fn read_dir(&self, path: &FsPath) -> Result<Vec<DirectoryEntry>>;
+    fn read_file_at(&self, path: &FsPath, offset: u64, destination: &mut [u8]) -> Result<usize>;
     fn read_link(&self, path: &FsPath) -> Result<FsPath>;
 }
 
