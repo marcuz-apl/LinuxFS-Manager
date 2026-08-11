@@ -218,3 +218,145 @@ mod tests {
         }
     }
 }
+
+/// Lifecycle state for a mounted read-only volume.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MountStatus {
+    Unmounted,
+    Mounting,
+    Mounted,
+    Unmounting,
+    Failed,
+}
+
+/// Native host operations required by the platform adapter.
+///
+/// The implementation is responsible for configuring WinFsp as read-only and
+/// for mapping all source mutations to access denied before returning success.
+pub trait MountHost {
+    fn mount(&mut self) -> Result<()>;
+    fn unmount(&mut self) -> Result<()>;
+}
+
+/// Owns mount lifecycle transitions without coupling the core to WinFsp types.
+pub struct MountManager<H> {
+    host: H,
+    status: MountStatus,
+}
+
+impl<H> MountManager<H>
+where
+    H: MountHost,
+{
+    pub fn new(host: H) -> Self {
+        Self {
+            host,
+            status: MountStatus::Unmounted,
+        }
+    }
+
+    pub fn status(&self) -> MountStatus {
+        self.status
+    }
+
+    pub fn mount(&mut self) -> Result<()> {
+        if self.status != MountStatus::Unmounted {
+            return Err(linuxfs_core::Error::new(
+                linuxfs_core::ErrorCategory::PermissionDenied,
+                "mount request is invalid in the current lifecycle state",
+            ));
+        }
+        self.status = MountStatus::Mounting;
+        match self.host.mount() {
+            Ok(()) => {
+                self.status = MountStatus::Mounted;
+                Ok(())
+            }
+            Err(error) => {
+                self.status = MountStatus::Failed;
+                Err(error)
+            }
+        }
+    }
+
+    pub fn unmount(&mut self) -> Result<()> {
+        if self.status != MountStatus::Mounted {
+            return Err(linuxfs_core::Error::new(
+                linuxfs_core::ErrorCategory::PermissionDenied,
+                "unmount request is invalid in the current lifecycle state",
+            ));
+        }
+        self.status = MountStatus::Unmounting;
+        match self.host.unmount() {
+            Ok(()) => {
+                self.status = MountStatus::Unmounted;
+                Ok(())
+            }
+            Err(error) => {
+                self.status = MountStatus::Failed;
+                Err(error)
+            }
+        }
+    }
+}
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+    use linuxfs_core::ErrorCategory;
+
+    struct FakeHost {
+        fail_mount: bool,
+        fail_unmount: bool,
+    }
+
+    impl MountHost for FakeHost {
+        fn mount(&mut self) -> Result<()> {
+            if self.fail_mount {
+                Err(linuxfs_core::Error::new(
+                    ErrorCategory::WinFspFailure,
+                    "fake mount failure",
+                ))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn unmount(&mut self) -> Result<()> {
+            if self.fail_unmount {
+                Err(linuxfs_core::Error::new(
+                    ErrorCategory::WinFspFailure,
+                    "fake unmount failure",
+                ))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn lifecycle_requires_mount_before_unmount() {
+        let mut manager = MountManager::new(FakeHost {
+            fail_mount: false,
+            fail_unmount: false,
+        });
+        assert_eq!(manager.status(), MountStatus::Unmounted);
+        assert!(manager.unmount().is_err());
+        manager.mount().expect("mount");
+        assert_eq!(manager.status(), MountStatus::Mounted);
+        manager.unmount().expect("unmount");
+        assert_eq!(manager.status(), MountStatus::Unmounted);
+    }
+
+    #[test]
+    fn failed_host_operation_enters_failed_state() {
+        let mut manager = MountManager::new(FakeHost {
+            fail_mount: true,
+            fail_unmount: false,
+        });
+        assert_eq!(
+            manager.mount().expect_err("failure").category(),
+            ErrorCategory::WinFspFailure
+        );
+        assert_eq!(manager.status(), MountStatus::Failed);
+    }
+}

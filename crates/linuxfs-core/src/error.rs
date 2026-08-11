@@ -10,6 +10,9 @@ pub enum ErrorCategory {
     UnsupportedFeature,
     FilesystemCorrupt,
     FilesystemNeedsRecovery,
+    MountPointUnavailable,
+    WinFspUnavailable,
+    WinFspFailure,
     Internal,
 }
 
