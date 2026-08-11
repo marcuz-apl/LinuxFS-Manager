@@ -9,6 +9,7 @@ $wslDirectory = (wsl wslpath -a ($windowsDirectory -replace "\\", "/")).Trim()
 foreach ($filesystem in @("ext2", "ext3", "ext4")) {
     $wslOutput = "$wslDirectory/$filesystem.img"
     wsl -e bash -lc "set -e; rm -f '$wslOutput'; dd if=/dev/zero of='$wslOutput' bs=1M count=32 status=none; mkfs.$filesystem -F -q -L LINUXFS_$filesystem '$wslOutput'"
+    wsl -e bash -lc "set -e; printf 'linuxfs-fixture-' > /tmp/linuxfs-fixture-content; debugfs -w -R 'write /tmp/linuxfs-fixture-content /hello.txt' '$wslOutput' >/dev/null; debugfs -w -R 'symlink /hello-link /hello.txt' '$wslOutput' >/dev/null"
     if ($LASTEXITCODE -ne 0) { throw "failed to generate $filesystem fixture" }
 }
 

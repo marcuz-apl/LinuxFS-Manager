@@ -31,6 +31,22 @@ fn generated_ext_fixtures_are_read_only_and_probeable() {
             entries.iter().any(|entry| entry.name == "lost+found"),
             "fresh fixture should expose lost+found"
         );
+        let file_path = FsPath::parse("/hello.txt").expect("fixture file path");
+        let file_metadata = backend.lookup(&file_path).expect("file metadata reads");
+        assert_eq!(file_metadata.kind, linuxfs_core::FileKind::Regular);
+        let mut content = [0; 16];
+        let content_len = backend
+            .read_file_at(&file_path, 0, &mut content)
+            .expect("file reads");
+        assert_eq!(&content[..content_len], b"linuxfs-fixture-");
+        let link_path = FsPath::parse("/hello-link").expect("fixture link path");
+        assert_eq!(
+            backend
+                .read_link(&link_path)
+                .expect("symlink reads")
+                .as_str(),
+            "/hello.txt"
+        );
         drop(backend);
         let after = fs::read(&path).expect("fixture reads after probe");
         assert_eq!(after, before, "{name} changed during read-only probe");
