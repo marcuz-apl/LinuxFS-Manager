@@ -6,6 +6,10 @@ pub enum ErrorCategory {
     PermissionDenied,
     InvalidImage,
     PartitionTable,
+    UnsupportedFilesystem,
+    UnsupportedFeature,
+    FilesystemCorrupt,
+    FilesystemNeedsRecovery,
     Internal,
 }
 

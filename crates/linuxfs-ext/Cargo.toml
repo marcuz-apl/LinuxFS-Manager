@@ -1,0 +1,13 @@
+[package]
+name = "linuxfs-ext"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+ext4-view = { version = "0.9.3", default-features = false }
+linuxfs-core = { path = "../linuxfs-core" }
+
+[lints]
+workspace = true
