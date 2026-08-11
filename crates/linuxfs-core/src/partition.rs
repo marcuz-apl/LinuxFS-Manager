@@ -1,3 +1,5 @@
+mod mbr;
+
 use crate::{BlockGeometry, BlockReader, Error, ErrorCategory, Result};
 
 const MBR_SIGNATURE_OFFSET: usize = 510;
@@ -60,11 +62,16 @@ pub fn discover_layout(reader: &dyn BlockReader, geometry: BlockGeometry) -> Res
         false
     };
 
-    if has_mbr_signature || has_gpt_signature {
+    if has_gpt_signature {
         return Err(Error::new(
             ErrorCategory::PartitionTable,
-            "partition table signature requires validation",
+            "GPT partition table validation is not implemented",
         ));
+    }
+    if has_mbr_signature {
+        return Ok(SourceLayout::Mbr {
+            partitions: mbr::parse(reader, geometry, &sector_zero)?,
+        });
     }
     Ok(SourceLayout::DirectImage)
 }
@@ -118,6 +125,7 @@ mod tests {
     fn partition_signature_fails_closed_until_validated() {
         let mut bytes = vec![0; 4096];
         bytes[510..512].copy_from_slice(&[0x55, 0xAA]);
+        bytes[450] = 0x83;
         let error = discover_layout(&MemoryReader::new(bytes), BlockGeometry::raw_image_512())
             .expect_err("unvalidated table is rejected");
         assert_eq!(error.category(), ErrorCategory::PartitionTable);
