@@ -2503,7 +2503,9 @@ dependencies = [
 name = "linuxfs-preview"
 version = "0.1.0"
 dependencies = [
+ "linuxfs-app",
  "slint",
+ "winfsp",
 ]
 
 [[package]]

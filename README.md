@@ -35,5 +35,6 @@ cargo run -p linuxfs-preview
 
 It uses mock data only and does not open, mount, or modify any disk image.
 
-This preview is intentionally mock-only and is not the production filesystem
-application or a replacement for the planned Slint bridge.
+This preview loads the supplied image through the Rust provider and uses the
+real read-only WinFsp mount service. Refresh/Open Image and the full source list
+remain part of the production application bridge.

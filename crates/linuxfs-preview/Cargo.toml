@@ -6,7 +6,11 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+linuxfs-app = { path = "../linuxfs-app" }
 slint = "1.13"
+
+[target.'cfg(windows)'.dependencies]
+winfsp = "0.13"
 
 [lints]
 workspace = true
