@@ -4,6 +4,7 @@ pub mod native;
 use linuxfs_core::{
     DirectoryEntry, FilesystemInfo, FsPath, NodeMetadata, ReadOnlyFilesystem, Result,
 };
+use std::path::PathBuf;
 
 /// Result of checking whether the WinFsp runtime can be loaded.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,9 +34,33 @@ pub fn check_winfsp() -> WinFspStatus {
     platform::check()
 }
 
+/// Returns the registered WinFsp installation directory without changing system state.
+pub fn winfsp_installation_dir() -> Option<PathBuf> {
+    platform::installation_dir()
+}
+
+/// Returns the registered architecture-specific WinFsp runtime DLL path.
+pub fn winfsp_runtime_path() -> Option<PathBuf> {
+    let directory = winfsp_installation_dir()?;
+    Some(directory.join("bin").join(runtime_dll_name()))
+}
+
+fn runtime_dll_name() -> &'static str {
+    if cfg!(target_arch = "x86_64") {
+        "winfsp-x64.dll"
+    } else if cfg!(target_arch = "x86") {
+        "winfsp-x86.dll"
+    } else if cfg!(target_arch = "aarch64") {
+        "winfsp-a64.dll"
+    } else {
+        "winfsp-unknown.dll"
+    }
+}
+
 #[cfg(windows)]
 mod platform {
     use super::{WinFspStatus, WinFspUnavailableReason};
+    use std::path::PathBuf;
 
     pub fn check() -> WinFspStatus {
         match winfsp::winfsp_init() {
@@ -45,17 +70,69 @@ mod platform {
             },
         }
     }
+
+    pub fn installation_dir() -> Option<PathBuf> {
+        super::registry_installation_dir()
+    }
 }
 
 #[cfg(not(windows))]
 mod platform {
     use super::{WinFspStatus, WinFspUnavailableReason};
+    use std::path::PathBuf;
 
     pub fn check() -> WinFspStatus {
         WinFspStatus::Unavailable {
             reason: WinFspUnavailableReason::UnsupportedPlatform,
         }
     }
+
+    pub fn installation_dir() -> Option<PathBuf> {
+        None
+    }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn registry_installation_dir() -> Option<PathBuf> {
+    use std::{ffi::OsString, os::windows::ffi::OsStringExt};
+    use windows_sys::Win32::System::Registry::{HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW};
+
+    for key in ["SOFTWARE\\WOW6432Node\\WinFsp", "SOFTWARE\\WinFsp"] {
+        let key: Vec<u16> = key.encode_utf16().chain(std::iter::once(0)).collect();
+        let value: Vec<u16> = "InstallDir"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut buffer = [0u16; 260];
+        let mut size = (buffer.len() * std::mem::size_of::<u16>()) as u32;
+        // SAFETY: all pointers reference owned, NUL-terminated buffers and the output buffer
+        // is accompanied by its byte capacity; the call only reads registry state.
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_LOCAL_MACHINE,
+                key.as_ptr(),
+                value.as_ptr(),
+                RRF_RT_REG_SZ,
+                std::ptr::null_mut(),
+                buffer.as_mut_ptr().cast(),
+                &mut size,
+            )
+        };
+        if status == 0 && size >= 2 {
+            let units = (size as usize / 2).saturating_sub(1);
+            let path = OsString::from_wide(&buffer[..units]);
+            if !path.is_empty() {
+                return Some(PathBuf::from(path));
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+fn registry_installation_dir() -> Option<PathBuf> {
+    None
 }
 
 /// Windows filesystem requests handled by the adapter boundary.

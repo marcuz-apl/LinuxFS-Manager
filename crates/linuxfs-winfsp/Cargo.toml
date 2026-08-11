@@ -12,11 +12,12 @@ linuxfs-core = { path = "../linuxfs-core" }
 workspace = true
 
 [target.'cfg(windows)'.dependencies]
-winfsp = { version = "0.13", default-features = false, features = ["delayload"] }
+winfsp = { version = "0.13", default-features = false, features = ["delayload", "system"] }
 winfsp-sys = { version = "0.12", default-features = false }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry"] }
 
 [target.'cfg(windows)'.build-dependencies]
-winfsp = { version = "0.13", default-features = false, features = ["delayload"] }
+winfsp = { version = "0.13", default-features = false, features = ["delayload", "system"] }
 [dev-dependencies]
 linuxfs-ext = { path = "../linuxfs-ext" }
 linuxfs-storage = { path = "../linuxfs-storage" }
