@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 publish = false
 
+[[bin]]
+name = "LinuxFSManager"
+path = "src/main.rs"
+
 [dependencies]
 linuxfs-app = { path = "../linuxfs-app" }
 slint = "1.13"

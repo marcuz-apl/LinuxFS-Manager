@@ -2,11 +2,13 @@ slint::slint! {
     import { Button, VerticalBox, HorizontalBox, GroupBox } from "std-widgets.slint";
 
     export component MainWindow inherits Window {
-        title: "LinuxFS Manager — Lightweight Preview";
+        title: "LinuxFS Manager";
         min-width: 760px;
         min-height: 430px;
 
-        in-out property <string> status: "Ready for a simulated read-only mount.";
+        in-out property <string> status: "Ready.";
+        in-out property <string> source_name: "No source loaded";
+        in-out property <string> source_details: "Open a raw Ext image to inspect it.";
         callback mount_clicked();
         callback unmount_clicked();
         callback details_clicked();
@@ -34,8 +36,8 @@ slint::slint! {
                 VerticalBox {
                     padding: 12px;
                     spacing: 6px;
-                    Text { text: "ubuntu24-vdisk1.raw"; font-weight: 700; }
-                    Text { text: "Ext4  ·  Raw image  ·  Compatible  ·  Read-only source"; }
+                    Text { text: source_name; font-weight: 700; }
+                    Text { text: source_details; }
                     HorizontalBox {
                         spacing: 8px;
                         Button { text: "Mount"; clicked => { root.mount_clicked(); } }
@@ -74,6 +76,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service = Arc::new(Mutex::new(WindowsImageMountService::new("L:")));
     let _winfsp = winfsp::winfsp_init()?;
     let window = MainWindow::new()?;
+    window.set_source_name(source.display_name.clone().into());
+    window.set_source_details(
+        format!(
+            "{}  ·  {}  ·  Compatible  ·  Read-only source",
+            source.filesystem_type.as_deref().unwrap_or("Unknown"),
+            source.source_description
+        )
+        .into(),
+    );
     let weak = window.as_weak();
     let source_for_mount = source.clone();
     let service_for_mount = Arc::clone(&service);
