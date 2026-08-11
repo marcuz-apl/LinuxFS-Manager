@@ -1,3 +1,5 @@
+mod crc32;
+mod gpt;
 mod mbr;
 
 use crate::{BlockGeometry, BlockReader, Error, ErrorCategory, Result};
@@ -63,10 +65,9 @@ pub fn discover_layout(reader: &dyn BlockReader, geometry: BlockGeometry) -> Res
     };
 
     if has_gpt_signature {
-        return Err(Error::new(
-            ErrorCategory::PartitionTable,
-            "GPT partition table validation is not implemented",
-        ));
+        return Ok(SourceLayout::Gpt {
+            partitions: gpt::parse(reader, geometry, &sector_one(reader, geometry)?)?,
+        });
     }
     if has_mbr_signature {
         return Ok(SourceLayout::Mbr {
@@ -74,6 +75,18 @@ pub fn discover_layout(reader: &dyn BlockReader, geometry: BlockGeometry) -> Res
         });
     }
     Ok(SourceLayout::DirectImage)
+}
+
+fn sector_one(reader: &dyn BlockReader, geometry: BlockGeometry) -> Result<Vec<u8>> {
+    let size = usize::try_from(geometry.logical_sector_size()).map_err(|_| {
+        Error::new(
+            ErrorCategory::InvalidImage,
+            "sector size does not fit usize",
+        )
+    })?;
+    let mut sector = vec![0; size];
+    reader.read_exact_at(u64::from(geometry.logical_sector_size()), &mut sector)?;
+    Ok(sector)
 }
 
 #[cfg(test)]
