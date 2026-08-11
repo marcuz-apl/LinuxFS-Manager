@@ -370,3 +370,65 @@ mod controller_tests {
         assert_eq!(error.category(), linuxfs_core::ErrorCategory::Internal);
     }
 }
+
+#[cfg(windows)]
+pub struct ImageSourceProvider {
+    next_id: u64,
+}
+
+#[cfg(windows)]
+impl Default for ImageSourceProvider {
+    fn default() -> Self {
+        Self { next_id: 1 }
+    }
+}
+
+#[cfg(windows)]
+impl ImageSourceProvider {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[cfg(windows)]
+impl SourceProvider for ImageSourceProvider {
+    fn refresh(&mut self) -> linuxfs_core::Result<Vec<SourceViewModel>> {
+        Ok(Vec::new())
+    }
+
+    fn open_image(&mut self, path: &str) -> linuxfs_core::Result<SourceViewModel> {
+        use linuxfs_core::BlockReader;
+        use linuxfs_ext::ExtReadOnlyBackend;
+        use linuxfs_storage::RawImageReader;
+        use std::{path::Path, sync::Arc};
+
+        let reader = Arc::new(RawImageReader::open(path)?);
+        let size_bytes = reader.len()?;
+        let backend = ExtReadOnlyBackend::open(reader as Arc<dyn BlockReader>)?;
+        let info = backend.info()?;
+        let id = SourceId(self.next_id);
+        self.next_id = self.next_id.saturating_add(1);
+        let display_name = Path::new(path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(path)
+            .to_owned();
+        Ok(SourceViewModel {
+            id,
+            kind: SourceKind::Image,
+            display_name,
+            source_description: path.to_owned(),
+            filesystem_type: Some(info.filesystem_type),
+            label: info.label,
+            uuid: info.uuid.map(|uuid| {
+                uuid.iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>()
+            }),
+            size_bytes: Some(size_bytes),
+            status: SourceStatus::Compatible,
+            mount_point: None,
+            read_only: true,
+        })
+    }
+}
