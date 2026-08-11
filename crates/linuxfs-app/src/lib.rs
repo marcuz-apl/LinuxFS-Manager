@@ -479,3 +479,22 @@ impl SourceProvider for WindowsSourceProvider {
         self.image_provider.open_image(path)
     }
 }
+
+#[cfg(windows)]
+#[cfg(test)]
+mod provided_image_tests {
+    use super::*;
+
+    #[test]
+    fn configured_image_probes_read_only() {
+        let Some(path) = std::env::var_os("LINUXFS_TEST_IMAGE") else {
+            return;
+        };
+        let mut provider = ImageSourceProvider::new();
+        let source = provider
+            .open_image(&path.to_string_lossy())
+            .expect("configured image should be probeable");
+        assert_eq!(source.status, SourceStatus::Compatible);
+        assert!(source.read_only);
+    }
+}
