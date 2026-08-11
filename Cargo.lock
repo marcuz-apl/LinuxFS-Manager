@@ -139,6 +139,7 @@ dependencies = [
  "linuxfs-ext",
  "linuxfs-storage",
  "linuxfs-windows",
+ "linuxfs-winfsp",
 ]
 
 [[package]]

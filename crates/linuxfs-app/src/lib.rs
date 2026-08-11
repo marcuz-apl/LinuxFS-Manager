@@ -555,3 +555,91 @@ mod provided_image_tests {
         assert!(source.read_only);
     }
 }
+
+#[cfg(windows)]
+pub struct WindowsImageMountService {
+    mount_point: String,
+    mounts: std::collections::HashMap<
+        SourceId,
+        linuxfs_winfsp::MountManager<
+            linuxfs_winfsp::native::NativeMountHost<linuxfs_ext::ExtReadOnlyBackend>,
+        >,
+    >,
+}
+
+#[cfg(windows)]
+impl WindowsImageMountService {
+    pub fn new(mount_point: impl Into<String>) -> Self {
+        Self {
+            mount_point: mount_point.into(),
+            mounts: std::collections::HashMap::new(),
+        }
+    }
+}
+
+#[cfg(windows)]
+impl MountService for WindowsImageMountService {
+    fn mount(&mut self, source: &SourceViewModel) -> linuxfs_core::Result<String> {
+        use linuxfs_core::BlockReader;
+        use linuxfs_ext::ExtReadOnlyBackend;
+        use linuxfs_storage::RawImageReader;
+        use linuxfs_winfsp::{MountManager, native::NativeMountHost};
+        use std::sync::Arc;
+
+        if source.kind != SourceKind::Image {
+            return Err(linuxfs_core::Error::new(
+                linuxfs_core::ErrorCategory::UnsupportedFilesystem,
+                "only raw image sources are currently mountable",
+            ));
+        }
+        if self.mounts.contains_key(&source.id) {
+            return Err(linuxfs_core::Error::new(
+                linuxfs_core::ErrorCategory::WinFspFailure,
+                "source is already mounted",
+            ));
+        }
+        let reader: Arc<dyn BlockReader> =
+            Arc::new(RawImageReader::open(&source.source_description)?);
+        let backend = ExtReadOnlyBackend::open(reader)?;
+        let host = NativeMountHost::new(backend, "LinuxFS Manager", self.mount_point.clone())
+            .map_err(|error| {
+                linuxfs_core::Error::with_source(
+                    linuxfs_core::ErrorCategory::WinFspFailure,
+                    "cannot create WinFsp host",
+                    error,
+                )
+            })?;
+        let mut manager = MountManager::new(host);
+        manager.mount()?;
+        self.mounts.insert(source.id, manager);
+        Ok(self.mount_point.clone())
+    }
+
+    fn unmount(&mut self, source: &SourceViewModel) -> linuxfs_core::Result<()> {
+        let Some(mut manager) = self.mounts.remove(&source.id) else {
+            return Err(linuxfs_core::Error::new(
+                linuxfs_core::ErrorCategory::WinFspFailure,
+                "source is not owned by this application",
+            ));
+        };
+        if let Err(error) = manager.unmount() {
+            self.mounts.insert(source.id, manager);
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn open_in_explorer(&mut self, mount_point: &str) -> linuxfs_core::Result<()> {
+        std::process::Command::new("explorer.exe")
+            .arg(mount_point)
+            .spawn()
+            .map(|_| ())
+            .map_err(|source| {
+                linuxfs_core::Error::with_source(
+                    linuxfs_core::ErrorCategory::WinFspFailure,
+                    "cannot open Explorer",
+                    source,
+                )
+            })
+    }
+}

@@ -10,6 +10,7 @@ linuxfs-core = { path = "../linuxfs-core" }
 linuxfs-ext = { path = "../linuxfs-ext" }
 linuxfs-storage = { path = "../linuxfs-storage" }
 linuxfs-windows = { path = "../linuxfs-windows" }
+linuxfs-winfsp = { path = "../linuxfs-winfsp" }
 
 [lints]
 workspace = true
