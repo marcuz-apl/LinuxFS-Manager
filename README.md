@@ -14,7 +14,7 @@ The repository now provides a tested, read-only image-inspection core in Rust:
 - structured errors for malformed or unsupported partition metadata.
 
 This milestone does not yet include Ext2/Ext3/Ext4 parsing, physical-device access,
-WinFsp mounting, Qt/QML UI, configuration, logging, or packaging. Those are later
+WinFsp mounting, Slint UI, configuration, logging, or packaging. Those are later
 milestones.
 
 ## V1 safety promise
@@ -27,10 +27,13 @@ development and safety rules.
 
 ## UI smoke test
 
-With Qt 6 installed, the standalone visual test can be launched with:
+With a Slint-capable Rust toolchain, the standalone visual test can be launched with:
 
 ```powershell
-qml ui/qml/TestMain.qml
+cargo run -p linuxfs-preview
 ```
 
 It uses mock data only and does not open, mount, or modify any disk image.
+
+This preview is intentionally mock-only and is not the production filesystem
+application or a replacement for the planned Slint bridge.

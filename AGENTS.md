@@ -13,7 +13,7 @@ Build a safe Windows application that gives users **read-only** access to Linux 
 - physical disks/partitions, and
 - raw filesystem/disk image files.
 
-The application uses Rust for core logic, Qt/QML for the desktop UI, and WinFsp for Windows filesystem mounting.
+The application uses Rust for core logic, Slint for the desktop UI, and WinFsp for Windows filesystem mounting.
 
 V1 is not a disk editor or filesystem repair utility.
 
@@ -101,8 +101,8 @@ Do not expose source-side operations such as:
 
 - Windows 10/11 x64
 - Rust
-- Qt 6 / QML
-- CXX-Qt integration
+- Slint declarative UI
+- Rust/Slint application bridge
 - WinFsp integration
 - Ext2
 - Ext3
@@ -173,7 +173,7 @@ If future requirements introduce large persistent indexes or relational queries,
 Keep these concerns isolated:
 
 ```text
-Qt/QML UI
+Slint UI
     ↓
 Application/API layer
     ├── Storage discovery
@@ -194,13 +194,13 @@ Avoid direct dependencies that bypass these boundaries.
 
 ### 6.1 UI
 
-QML should:
+Slint UI should:
 
 - render state
 - emit user intentions
 - display progress/errors
 
-QML should not:
+Slint UI should not:
 
 - parse partition tables
 - parse Ext structures
@@ -216,7 +216,7 @@ Storage code owns:
 - partition views
 - image readers
 
-It does not know about QML.
+It does not know about Slint implementation details.
 
 ### 6.3 Filesystem backend
 
@@ -351,7 +351,7 @@ Keep unsafe code behind the smallest possible API boundary.
 
 ### 10.4 Concurrency
 
-Do not block the Qt UI thread with:
+Do not block the Slint UI thread with:
 
 - disk scanning
 - filesystem probing
@@ -363,15 +363,14 @@ Use worker execution and send bounded state/progress to the UI.
 
 ---
 
-## 11. Qt/CXX-Qt Rules
+## 11. Slint UI Rules
 
 Preferred UI technology:
 
-- Qt 6
-- Qt Quick/QML
-- CXX-Qt
+- Slint declarative UI
+- Rust callbacks and application models
 
-Keep the Rust/Qt bridge small and intentional.
+Keep the Rust/Slint bridge small and intentional.
 
 Expose application-facing models and commands rather than raw filesystem objects.
 
@@ -537,7 +536,7 @@ Keep generated build output out of Git.
 
 Do not commit:
 
-- Qt build directories
+- Slint build directories
 - Rust `target/`
 - user disk images unless they are intentionally tiny redistributable fixtures
 - private filesystem images
@@ -562,7 +561,7 @@ Critical dependencies deserve extra review:
 - WinFsp bindings
 - filesystem parser
 - Windows API wrappers
-- Qt bridge
+- Slint bridge
 
 Do not download random filesystem-driver DLLs from third-party sites.
 
@@ -573,14 +572,13 @@ Do not download random filesystem-driver DLLs from third-party sites.
 Before shipping, review licenses and redistribution terms for:
 
 - WinFsp
-- Qt
-- CXX-Qt
+- Slint
 - selected Rust crates
 - installer/bootstrap components
 
 Do not make licensing assumptions based only on "open source" or "free."
 
-Any change in distribution model that affects Qt or WinFsp licensing should be documented.
+Any change in distribution model that affects Slint or WinFsp licensing should be documented.
 
 ---
 
@@ -634,7 +632,7 @@ cargo build --workspace
 
 When integration tests exist, run them too.
 
-When Qt/CXX-Qt build tooling is configured, include its build/test checks.
+When Slint build tooling is configured, include its build/test checks.
 
 When WinFsp integration changes, run the write-denial test suite.
 
@@ -657,8 +655,8 @@ Unless the repository already establishes another plan:
 9. Windows physical-device reader
 10. WinFsp adapter
 11. mount manager
-12. Qt/CXX-Qt application bridge
-13. QML UI
+12. Slint application bridge
+13. Slint UI
 14. config/logging
 15. packaging
 16. physical-media validation

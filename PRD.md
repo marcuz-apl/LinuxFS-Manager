@@ -4,7 +4,7 @@
 **Target platform:** Windows 10/11 x64  
 **V1 scope:** Read-only access to Ext2, Ext3, and Ext4 filesystems from physical disks/partitions and filesystem image files  
 **Primary implementation language:** Rust  
-**Desktop UI:** Qt/QML via CXX-Qt (preferred integration path)  
+**Desktop UI:** Slint (Rust-native declarative UI)  
 **Windows filesystem integration:** WinFsp user-mode filesystem  
 **Persistent application state:** File-based configuration; no database in V1  
 **Document status:** V1 baseline
@@ -338,16 +338,14 @@ The mount manager shall:
 - unmount explicitly
 - clean up mounts during orderly application shutdown
 
-### FR-10 — Qt desktop UI
+### FR-10 — Slint desktop UI
 
 Preferred V1 stack:
 
-- Qt 6
-- QML/Qt Quick for UI
+- Slint declarative UI and native Windows renderer
 - Rust application/core logic
-- CXX-Qt for Rust/Qt interoperability
 
-The UI shall remain a thin presentation layer; filesystem parsing and device access must not live in QML.
+The UI shall remain a thin presentation layer; filesystem parsing and device access must not live in the `.slint` layer.
 
 ### FR-11 — Main screen
 
@@ -450,10 +448,10 @@ Do not pretend a kernel driver can simply be replaced by an arbitrary DLL.
 
 ```text
 ┌───────────────────────────────────────────────────────────────┐
-│                       Qt / QML UI                             │
+│                       Slint UI                                │
 │             (presentation; no disk parsing)                   │
 └──────────────────────────┬────────────────────────────────────┘
-                           │ CXX-Qt
+                           │ Rust callbacks/models
 ┌──────────────────────────▼────────────────────────────────────┐
 │                  Rust Application Layer                       │
 │      discovery • commands • state • errors • config           │
@@ -799,10 +797,9 @@ Repository:
 
 The release process must clearly account for:
 
-- Qt runtime components
+- Slint runtime components, if not statically bundled
 - WinFsp runtime/driver
 - Microsoft runtime components if required by the chosen build
-- CXX-Qt generated bridge/build components at build time
 
 The goal is a simple user experience, but licensing and redistribution requirements must be reviewed before bundling dependencies.
 
@@ -953,8 +950,8 @@ It requires a separate PRD, threat/safety analysis, journaling/recovery design, 
 | Product name | LinuxFS Manager |
 | OS | Windows 10/11 x64 |
 | Core language | Rust |
-| GUI | Qt 6 / QML |
-| Rust/Qt bridge | CXX-Qt preferred |
+| GUI | Slint declarative UI |
+| UI bridge | Rust models and callbacks |
 | FS bridge | WinFsp user-mode filesystem |
 | Filesystems | Ext2/Ext3/Ext4 |
 | Access mode | Read-only, mandatory |
@@ -978,7 +975,7 @@ Current architectural candidates:
 - **WinFsp** — user-mode filesystem framework for Windows.
 - **winfsp-rs** — Rust bindings to WinFsp; validate API maturity and exact supported WinFsp version before committing to it.
 - **ext4-view** — Rust read-only Ext filesystem parser; currently documents read-only Ext4 and Ext2 support. Ext3 must be validated using LinuxFS Manager's own test corpus.
-- **CXX-Qt** — Rust/Qt integration supporting Qt/QML development on Windows.
+- **Slint** — Rust-native declarative UI toolkit used for the Windows desktop shell.
 
 Do not rely on a dependency name alone as proof of filesystem feature compatibility.
 
@@ -988,7 +985,7 @@ Do not rely on a dependency name alone as proof of filesystem feature compatibil
 
 - WinFsp documentation: https://winfsp.dev/doc/
 - WinFsp source/language support: https://winfsp.dev/src/
-- CXX-Qt documentation: https://kdab.github.io/cxx-qt/book/
+- Slint documentation: https://docs.slint.dev/
 - ext4-view documentation: https://docs.rs/ext4-view/
 - Linux kernel Ext4 on-disk format documentation: https://docs.kernel.org/filesystems/ext4/
 
@@ -1003,7 +1000,7 @@ These do not block the V1 product definition, but should be resolved during impl
 3. Exact mapping of Linux case-sensitive names and symlinks through WinFsp.
 4. Ext3 feature combinations supported by the selected parser.
 5. Whether V1 supports MBR extended/logical partitions.
-6. Packaging approach for Qt + WinFsp dependencies.
+6. Packaging approach for Slint + WinFsp dependencies.
 7. Windows ARM64 support after x64 V1.
 
 None of these questions may weaken the mandatory read-only policy.
