@@ -154,3 +154,219 @@ mod tests {
         assert_eq!(model.message(), Some("Scanning"));
     }
 }
+
+pub trait SourceProvider {
+    fn refresh(&mut self) -> linuxfs_core::Result<Vec<SourceViewModel>>;
+    fn open_image(&mut self, path: &str) -> linuxfs_core::Result<SourceViewModel>;
+}
+
+pub trait MountService {
+    fn mount(&mut self, source: &SourceViewModel) -> linuxfs_core::Result<String>;
+    fn unmount(&mut self, source: &SourceViewModel) -> linuxfs_core::Result<()>;
+    fn open_in_explorer(&mut self, mount_point: &str) -> linuxfs_core::Result<()>;
+}
+
+pub struct AppController<P, M> {
+    model: AppModel,
+    provider: P,
+    mount_service: M,
+}
+
+impl<P, M> AppController<P, M>
+where
+    P: SourceProvider,
+    M: MountService,
+{
+    pub fn new(provider: P, mount_service: M) -> Self {
+        Self {
+            model: AppModel::default(),
+            provider,
+            mount_service,
+        }
+    }
+
+    pub fn model(&self) -> &AppModel {
+        &self.model
+    }
+
+    pub fn model_mut(&mut self) -> &mut AppModel {
+        &mut self.model
+    }
+
+    pub fn refresh(&mut self) -> linuxfs_core::Result<()> {
+        self.model.set_busy(true);
+        self.model.set_message(Some("Scanning sources…".to_owned()));
+        let result = self.provider.refresh();
+        match result {
+            Ok(sources) => {
+                self.model.replace_sources(sources);
+                self.finish(Ok(()))
+            }
+            Err(error) => self.finish(Err(error)),
+        }
+    }
+
+    pub fn open_image(&mut self, path: &str) -> linuxfs_core::Result<()> {
+        self.model.set_busy(true);
+        self.model.set_message(Some("Opening image…".to_owned()));
+        let result = self.provider.open_image(path);
+        match result {
+            Ok(source) => {
+                self.model.sources.push(source);
+                self.finish(Ok(()))
+            }
+            Err(error) => self.finish(Err(error)),
+        }
+    }
+
+    pub fn mount(&mut self, id: SourceId) -> linuxfs_core::Result<()> {
+        let source = self.source(id)?.clone();
+        if !source.can_mount() {
+            return Err(command_error(
+                "source is not mountable in its current state",
+            ));
+        }
+        self.model.set_busy(true);
+        self.model
+            .set_message(Some("Mounting read-only…".to_owned()));
+        let result = self.mount_service.mount(&source);
+        match result {
+            Ok(mount_point) => {
+                if let Some(source) = self.model.source_mut(id) {
+                    source.status = SourceStatus::Mounted;
+                    source.mount_point = Some(mount_point);
+                    source.read_only = true;
+                }
+                self.finish(Ok(()))
+            }
+            Err(error) => self.finish(Err(error)),
+        }
+    }
+
+    pub fn unmount(&mut self, id: SourceId) -> linuxfs_core::Result<()> {
+        let source = self.source(id)?.clone();
+        if !source.can_unmount() {
+            return Err(command_error("source is not mounted"));
+        }
+        self.model.set_busy(true);
+        self.model.set_message(Some("Unmounting…".to_owned()));
+        let result = self.mount_service.unmount(&source);
+        match result {
+            Ok(()) => {
+                if let Some(source) = self.model.source_mut(id) {
+                    source.status = SourceStatus::Compatible;
+                    source.mount_point = None;
+                    source.read_only = true;
+                }
+                self.finish(Ok(()))
+            }
+            Err(error) => self.finish(Err(error)),
+        }
+    }
+
+    pub fn open_in_explorer(&mut self, id: SourceId) -> linuxfs_core::Result<()> {
+        let mount_point = self
+            .source(id)?
+            .mount_point
+            .clone()
+            .ok_or_else(|| command_error("source has no mount point"))?;
+        self.mount_service.open_in_explorer(&mount_point)
+    }
+
+    fn source(&self, id: SourceId) -> linuxfs_core::Result<&SourceViewModel> {
+        self.model
+            .sources
+            .iter()
+            .find(|source| source.id == id)
+            .ok_or_else(|| command_error("source was not found"))
+    }
+
+    fn finish<T>(&mut self, result: linuxfs_core::Result<T>) -> linuxfs_core::Result<T> {
+        self.model.set_busy(false);
+        if result.is_ok() {
+            self.model.set_message(None);
+        } else {
+            self.model.set_message(Some("Operation failed".to_owned()));
+        }
+        result
+    }
+}
+
+fn command_error(message: &'static str) -> linuxfs_core::Error {
+    linuxfs_core::Error::new(linuxfs_core::ErrorCategory::Internal, message)
+}
+#[cfg(test)]
+mod controller_tests {
+    use super::*;
+
+    struct FakeProvider;
+
+    impl SourceProvider for FakeProvider {
+        fn refresh(&mut self) -> linuxfs_core::Result<Vec<SourceViewModel>> {
+            Ok(vec![test_source()])
+        }
+
+        fn open_image(&mut self, path: &str) -> linuxfs_core::Result<SourceViewModel> {
+            let mut source = test_source();
+            source.display_name = path.to_owned();
+            Ok(source)
+        }
+    }
+
+    struct FakeMount;
+
+    impl MountService for FakeMount {
+        fn mount(&mut self, _source: &SourceViewModel) -> linuxfs_core::Result<String> {
+            Ok("L:".to_owned())
+        }
+
+        fn unmount(&mut self, _source: &SourceViewModel) -> linuxfs_core::Result<()> {
+            Ok(())
+        }
+
+        fn open_in_explorer(&mut self, _mount_point: &str) -> linuxfs_core::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn test_source() -> SourceViewModel {
+        SourceViewModel {
+            id: SourceId(7),
+            kind: SourceKind::Image,
+            display_name: "fixture.img".to_owned(),
+            source_description: "Raw image".to_owned(),
+            filesystem_type: Some("ext4".to_owned()),
+            label: None,
+            uuid: None,
+            size_bytes: Some(1024),
+            status: SourceStatus::Compatible,
+            mount_point: None,
+            read_only: true,
+        }
+    }
+
+    #[test]
+    fn controller_routes_refresh_mount_and_unmount() {
+        let mut controller = AppController::new(FakeProvider, FakeMount);
+        controller.refresh().expect("refresh");
+        controller.mount(SourceId(7)).expect("mount");
+        assert!(controller.model().sources()[0].can_unmount());
+        controller.unmount(SourceId(7)).expect("unmount");
+        assert!(controller.model().sources()[0].can_mount());
+    }
+
+    #[test]
+    fn controller_rejects_mounting_incompatible_source() {
+        let mut controller = AppController::new(FakeProvider, FakeMount);
+        controller
+            .model_mut()
+            .replace_sources(vec![SourceViewModel {
+                status: SourceStatus::Incompatible,
+                ..test_source()
+            }]);
+        let error = controller
+            .mount(SourceId(7))
+            .expect_err("incompatible source");
+        assert_eq!(error.category(), linuxfs_core::ErrorCategory::Internal);
+    }
+}
