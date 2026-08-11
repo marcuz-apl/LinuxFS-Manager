@@ -598,6 +598,7 @@ mod provided_image_tests {
 
         assert_eq!(source.source_path, "disk.raw");
         assert_eq!(source.partition_range, Some((1024, 2048)));
+        assert!(source_kind_is_mountable(SourceKind::Partition));
     }
 }
 
@@ -631,7 +632,7 @@ impl MountService for WindowsImageMountService {
         use linuxfs_winfsp::{MountManager, native::NativeMountHost};
         use std::sync::Arc;
 
-        if source.kind != SourceKind::Image {
+        if !source_kind_is_mountable(source.kind) {
             return Err(linuxfs_core::Error::new(
                 linuxfs_core::ErrorCategory::UnsupportedFilesystem,
                 "only raw image sources are currently mountable",
@@ -695,4 +696,9 @@ impl MountService for WindowsImageMountService {
                 )
             })
     }
+}
+
+#[cfg(windows)]
+fn source_kind_is_mountable(kind: SourceKind) -> bool {
+    matches!(kind, SourceKind::Image | SourceKind::Partition)
 }
