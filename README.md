@@ -24,3 +24,13 @@ means copying them from a mounted Linux source to a Windows destination.
 
 See [PRD.md](PRD.md) for the full requirements and [AGENTS.md](AGENTS.md) for
 development and safety rules.
+
+## UI smoke test
+
+With Qt 6 installed, the standalone visual test can be launched with:
+
+```powershell
+qml ui/qml/TestMain.qml
+```
+
+It uses mock data only and does not open, mount, or modify any disk image.
