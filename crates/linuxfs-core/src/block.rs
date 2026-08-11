@@ -84,3 +84,50 @@ mod tests {
         assert!(validate_read_range(16, 16, 0).is_ok());
     }
 }
+
+use std::sync::Arc;
+
+/// A bounded read-only view over a region of another block source.
+#[derive(Clone)]
+pub struct PartitionReader {
+    source: Arc<dyn BlockReader>,
+    offset: u64,
+    length: u64,
+}
+
+impl PartitionReader {
+    pub fn new(source: Arc<dyn BlockReader>, offset: u64, length: u64) -> Result<Self> {
+        let source_len = source.len()?;
+        let end = offset
+            .checked_add(length)
+            .ok_or_else(|| Error::new(ErrorCategory::InvalidImage, "partition range overflow"))?;
+        if end > source_len {
+            return Err(Error::new(
+                ErrorCategory::InvalidImage,
+                "partition extends beyond source",
+            ));
+        }
+        Ok(Self {
+            source,
+            offset,
+            length,
+        })
+    }
+}
+
+impl BlockReader for PartitionReader {
+    fn len(&self) -> Result<u64> {
+        Ok(self.length)
+    }
+
+    fn read_exact_at(&self, offset: u64, destination: &mut [u8]) -> Result<()> {
+        validate_read_range(self.length, offset, destination.len())?;
+        let absolute = self.offset.checked_add(offset).ok_or_else(|| {
+            Error::new(
+                ErrorCategory::StorageAccess,
+                "partition read offset overflow",
+            )
+        })?;
+        self.source.read_exact_at(absolute, destination)
+    }
+}

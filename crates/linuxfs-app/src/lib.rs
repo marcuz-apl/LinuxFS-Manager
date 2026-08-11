@@ -391,21 +391,15 @@ impl ImageSourceProvider {
 }
 
 #[cfg(windows)]
-impl SourceProvider for ImageSourceProvider {
-    fn refresh(&mut self) -> linuxfs_core::Result<Vec<SourceViewModel>> {
-        Ok(Vec::new())
-    }
-
-    fn open_image(&mut self, path: &str) -> linuxfs_core::Result<SourceViewModel> {
-        use linuxfs_core::BlockReader;
-        use linuxfs_ext::ExtReadOnlyBackend;
-        use linuxfs_storage::RawImageReader;
-        use std::{path::Path, sync::Arc};
-
-        let reader = Arc::new(RawImageReader::open(path)?);
-        let size_bytes = reader.len()?;
-        let backend = ExtReadOnlyBackend::open(reader as Arc<dyn BlockReader>)?;
-        let info = backend.info()?;
+impl ImageSourceProvider {
+    fn source_from_info(
+        &mut self,
+        path: &str,
+        size_bytes: u64,
+        description: String,
+        info: linuxfs_core::FilesystemInfo,
+    ) -> SourceViewModel {
+        use std::path::Path;
         let id = SourceId(self.next_id);
         self.next_id = self.next_id.saturating_add(1);
         let display_name = Path::new(path)
@@ -413,23 +407,86 @@ impl SourceProvider for ImageSourceProvider {
             .and_then(|name| name.to_str())
             .unwrap_or(path)
             .to_owned();
-        Ok(SourceViewModel {
+        SourceViewModel {
             id,
-            kind: SourceKind::Image,
+            kind: if description == path {
+                SourceKind::Image
+            } else {
+                SourceKind::Partition
+            },
             display_name,
-            source_description: path.to_owned(),
+            source_description: description,
             filesystem_type: Some(info.filesystem_type),
             label: info.label,
-            uuid: info.uuid.map(|uuid| {
-                uuid.iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect::<String>()
-            }),
+            uuid: info
+                .uuid
+                .map(|uuid| uuid.iter().map(|byte| format!("{byte:02x}")).collect()),
             size_bytes: Some(size_bytes),
             status: SourceStatus::Compatible,
             mount_point: None,
             read_only: true,
-        })
+        }
+    }
+}
+
+#[cfg(windows)]
+impl SourceProvider for ImageSourceProvider {
+    fn refresh(&mut self) -> linuxfs_core::Result<Vec<SourceViewModel>> {
+        Ok(Vec::new())
+    }
+
+    fn open_image(&mut self, path: &str) -> linuxfs_core::Result<SourceViewModel> {
+        use linuxfs_core::{
+            BlockGeometry, BlockReader, PartitionReader, SourceLayout, discover_layout,
+        };
+        use linuxfs_ext::ExtReadOnlyBackend;
+        use linuxfs_storage::RawImageReader;
+        use std::sync::Arc;
+
+        let reader: Arc<dyn BlockReader> = Arc::new(RawImageReader::open(path)?);
+        let source_size = reader.len()?;
+        let layout = discover_layout(reader.as_ref(), BlockGeometry::raw_image_512())?;
+        match layout {
+            SourceLayout::DirectImage => {
+                let backend = ExtReadOnlyBackend::open(Arc::clone(&reader))?;
+                let info = backend.info()?;
+                Ok(self.source_from_info(path, source_size, path.to_owned(), info))
+            }
+            SourceLayout::Mbr { partitions } | SourceLayout::Gpt { partitions } => {
+                let mut last_error = None;
+                for partition in partitions {
+                    let view = match PartitionReader::new(
+                        Arc::clone(&reader),
+                        partition.byte_offset,
+                        partition.byte_length,
+                    ) {
+                        Ok(view) => Arc::new(view) as Arc<dyn BlockReader>,
+                        Err(error) => {
+                            last_error = Some(error);
+                            continue;
+                        }
+                    };
+                    match ExtReadOnlyBackend::open(Arc::clone(&view)) {
+                        Ok(backend) => {
+                            let info = backend.info()?;
+                            return Ok(self.source_from_info(
+                                path,
+                                partition.byte_length,
+                                format!("{path} (partition {})", partition.number),
+                                info,
+                            ));
+                        }
+                        Err(error) => last_error = Some(error),
+                    }
+                }
+                Err(last_error.unwrap_or_else(|| {
+                    linuxfs_core::Error::new(
+                        linuxfs_core::ErrorCategory::UnsupportedFilesystem,
+                        "no supported Ext filesystem found in image partitions",
+                    )
+                }))
+            }
+        }
     }
 }
 
