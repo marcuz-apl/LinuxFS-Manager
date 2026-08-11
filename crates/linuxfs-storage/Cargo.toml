@@ -1,0 +1,12 @@
+[package]
+name = "linuxfs-storage"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+linuxfs-core = { path = "../linuxfs-core" }
+
+[lints]
+workspace = true

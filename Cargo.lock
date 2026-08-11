@@ -5,3 +5,10 @@ version = 4
 [[package]]
 name = "linuxfs-core"
 version = "0.1.0"
+
+[[package]]
+name = "linuxfs-storage"
+version = "0.1.0"
+dependencies = [
+ "linuxfs-core",
+]
