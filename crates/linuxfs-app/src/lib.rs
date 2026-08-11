@@ -27,6 +27,8 @@ pub struct SourceViewModel {
     pub kind: SourceKind,
     pub display_name: String,
     pub source_description: String,
+    pub source_path: String,
+    pub partition_range: Option<(u64, u64)>,
     pub filesystem_type: Option<String>,
     pub label: Option<String>,
     pub uuid: Option<String>,
@@ -116,6 +118,8 @@ mod tests {
             kind: SourceKind::Image,
             display_name: "fixture.img".to_owned(),
             source_description: "Raw image".to_owned(),
+            source_path: "fixture.img".to_owned(),
+            partition_range: None,
             filesystem_type: Some("ext4".to_owned()),
             label: Some("fixture".to_owned()),
             uuid: None,
@@ -349,6 +353,8 @@ mod controller_tests {
             kind: SourceKind::Image,
             display_name: "fixture.img".to_owned(),
             source_description: "Raw image".to_owned(),
+            source_path: "fixture.img".to_owned(),
+            partition_range: None,
             filesystem_type: Some("ext4".to_owned()),
             label: None,
             uuid: None,
@@ -411,6 +417,7 @@ impl ImageSourceProvider {
         path: &str,
         size_bytes: u64,
         description: String,
+        partition_range: Option<(u64, u64)>,
         info: linuxfs_core::FilesystemInfo,
     ) -> SourceViewModel {
         use std::path::Path;
@@ -430,6 +437,8 @@ impl ImageSourceProvider {
             },
             display_name,
             source_description: description,
+            source_path: path.to_owned(),
+            partition_range,
             filesystem_type: Some(info.filesystem_type),
             label: info.label,
             uuid: info
@@ -464,7 +473,7 @@ impl SourceProvider for ImageSourceProvider {
             SourceLayout::DirectImage => {
                 let backend = ExtReadOnlyBackend::open(Arc::clone(&reader))?;
                 let info = backend.info()?;
-                Ok(self.source_from_info(path, source_size, path.to_owned(), info))
+                Ok(self.source_from_info(path, source_size, path.to_owned(), None, info))
             }
             SourceLayout::Mbr { partitions } | SourceLayout::Gpt { partitions } => {
                 let mut last_error = None;
@@ -487,6 +496,7 @@ impl SourceProvider for ImageSourceProvider {
                                 path,
                                 partition.byte_length,
                                 format!("{path} (partition {})", partition.number),
+                                Some((partition.byte_offset, partition.byte_length)),
                                 info,
                             ));
                         }
@@ -535,6 +545,8 @@ impl SourceProvider for WindowsSourceProvider {
                 kind: SourceKind::PhysicalDisk,
                 display_name: format!("PhysicalDrive{}", disk.index),
                 source_description: disk.source_path.to_string_lossy().into_owned(),
+                source_path: disk.source_path.to_string_lossy().into_owned(),
+                partition_range: None,
                 filesystem_type: None,
                 label: None,
                 uuid: None,
@@ -568,6 +580,25 @@ mod provided_image_tests {
         assert_eq!(source.status, SourceStatus::Compatible);
         assert!(source.read_only);
     }
+
+    #[test]
+    fn partition_source_retains_backing_image_location() {
+        let mut provider = ImageSourceProvider::new();
+        let source = provider.source_from_info(
+            "disk.raw",
+            4096,
+            "disk.raw (partition 1)".to_owned(),
+            Some((1024, 2048)),
+            linuxfs_core::FilesystemInfo {
+                filesystem_type: "ext4".to_owned(),
+                label: None,
+                uuid: None,
+            },
+        );
+
+        assert_eq!(source.source_path, "disk.raw");
+        assert_eq!(source.partition_range, Some((1024, 2048)));
+    }
 }
 
 #[cfg(windows)]
@@ -594,7 +625,7 @@ impl WindowsImageMountService {
 #[cfg(windows)]
 impl MountService for WindowsImageMountService {
     fn mount(&mut self, source: &SourceViewModel) -> linuxfs_core::Result<String> {
-        use linuxfs_core::BlockReader;
+        use linuxfs_core::{BlockReader, PartitionReader};
         use linuxfs_ext::ExtReadOnlyBackend;
         use linuxfs_storage::RawImageReader;
         use linuxfs_winfsp::{MountManager, native::NativeMountHost};
@@ -612,8 +643,16 @@ impl MountService for WindowsImageMountService {
                 "source is already mounted",
             ));
         }
-        let reader: Arc<dyn BlockReader> =
-            Arc::new(RawImageReader::open(&source.source_description)?);
+        let image_reader: Arc<dyn BlockReader> =
+            Arc::new(RawImageReader::open(&source.source_path)?);
+        let reader: Arc<dyn BlockReader> = match source.partition_range {
+            Some((offset, length)) => Arc::new(PartitionReader::new(
+                Arc::clone(&image_reader),
+                offset,
+                length,
+            )?),
+            None => image_reader,
+        };
         let backend = ExtReadOnlyBackend::open(reader)?;
         let host = NativeMountHost::new(backend, "LinuxFS Manager", self.mount_point.clone())
             .map_err(|error| {
