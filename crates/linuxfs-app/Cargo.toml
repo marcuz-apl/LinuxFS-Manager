@@ -7,10 +7,13 @@ publish = false
 
 [dependencies]
 linuxfs-core = { path = "../linuxfs-core" }
+linuxfs-config = { path = "../linuxfs-config" }
 linuxfs-ext = { path = "../linuxfs-ext" }
 linuxfs-storage = { path = "../linuxfs-storage" }
 linuxfs-windows = { path = "../linuxfs-windows" }
 linuxfs-winfsp = { path = "../linuxfs-winfsp" }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 
 [lints]
 workspace = true

@@ -1,5 +1,7 @@
 use linuxfs_core::FileKind;
 
+pub mod runtime;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SourceId(pub u64);
 
@@ -194,6 +196,7 @@ where
     }
 
     pub fn refresh(&mut self) -> linuxfs_core::Result<()> {
+        tracing::info!(operation = "refresh", "scanning storage sources");
         self.model.set_busy(true);
         self.model.set_message(Some("Scanning sources…".to_owned()));
         let result = self.provider.refresh();
@@ -207,6 +210,11 @@ where
     }
 
     pub fn open_image(&mut self, path: &str) -> linuxfs_core::Result<()> {
+        tracing::info!(
+            operation = "open_image",
+            path,
+            "opening image source read-only"
+        );
         self.model.set_busy(true);
         self.model.set_message(Some("Opening image…".to_owned()));
         let result = self.provider.open_image(path);
@@ -220,6 +228,11 @@ where
     }
 
     pub fn mount(&mut self, id: SourceId) -> linuxfs_core::Result<()> {
+        tracing::info!(
+            operation = "mount",
+            source_id = id.0,
+            "mounting source read-only"
+        );
         let source = self.source(id)?.clone();
         if !source.can_mount() {
             return Err(command_error(
@@ -244,6 +257,7 @@ where
     }
 
     pub fn unmount(&mut self, id: SourceId) -> linuxfs_core::Result<()> {
+        tracing::info!(operation = "unmount", source_id = id.0, "unmounting source");
         let source = self.source(id)?.clone();
         if !source.can_unmount() {
             return Err(command_error("source is not mounted"));
