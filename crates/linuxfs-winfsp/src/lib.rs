@@ -242,7 +242,7 @@ pub trait MountHost {
 }
 
 /// Owns mount lifecycle transitions without coupling the core to WinFsp types.
-pub struct MountManager<H> {
+pub struct MountManager<H: MountHost> {
     host: H,
     status: MountStatus,
 }
@@ -301,15 +301,45 @@ where
             }
         }
     }
+
+    /// Attempts to clean up a mount owned by this manager during orderly shutdown.
+    ///
+    /// An already-unmounted manager is safely idempotent. Other non-mounted
+    /// states are left untouched because the manager cannot safely infer
+    /// whether the host owns a live mount.
+    pub fn shutdown(&mut self) -> Result<()> {
+        match self.status {
+            MountStatus::Mounted => self.unmount(),
+            MountStatus::Unmounted => Ok(()),
+            MountStatus::Mounting | MountStatus::Unmounting | MountStatus::Failed => {
+                Err(linuxfs_core::Error::new(
+                    linuxfs_core::ErrorCategory::PermissionDenied,
+                    "shutdown cleanup is invalid in the current lifecycle state",
+                ))
+            }
+        }
+    }
+}
+
+impl<H> Drop for MountManager<H>
+where
+    H: MountHost,
+{
+    fn drop(&mut self) {
+        let _ = self.shutdown();
+    }
 }
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
     use linuxfs_core::ErrorCategory;
+    use std::cell::Cell;
+    use std::rc::Rc;
 
     struct FakeHost {
         fail_mount: bool,
         fail_unmount: bool,
+        unmount_calls: usize,
     }
 
     impl MountHost for FakeHost {
@@ -325,6 +355,7 @@ mod lifecycle_tests {
         }
 
         fn unmount(&mut self) -> Result<()> {
+            self.unmount_calls += 1;
             if self.fail_unmount {
                 Err(linuxfs_core::Error::new(
                     ErrorCategory::WinFspFailure,
@@ -341,6 +372,7 @@ mod lifecycle_tests {
         let mut manager = MountManager::new(FakeHost {
             fail_mount: false,
             fail_unmount: false,
+            unmount_calls: 0,
         });
         assert_eq!(manager.status(), MountStatus::Unmounted);
         assert!(manager.unmount().is_err());
@@ -355,11 +387,72 @@ mod lifecycle_tests {
         let mut manager = MountManager::new(FakeHost {
             fail_mount: true,
             fail_unmount: false,
+            unmount_calls: 0,
         });
         assert_eq!(
             manager.mount().expect_err("failure").category(),
             ErrorCategory::WinFspFailure
         );
         assert_eq!(manager.status(), MountStatus::Failed);
+    }
+
+    #[test]
+    fn shutdown_unmounts_owned_mount_and_is_idempotent() {
+        let mut manager = MountManager::new(FakeHost {
+            fail_mount: false,
+            fail_unmount: false,
+            unmount_calls: 0,
+        });
+        manager.mount().expect("mount");
+
+        manager.shutdown().expect("shutdown");
+        assert_eq!(manager.status(), MountStatus::Unmounted);
+        assert_eq!(manager.host.unmount_calls, 1);
+
+        manager.shutdown().expect("second shutdown");
+        assert_eq!(manager.host.unmount_calls, 1);
+    }
+
+    #[test]
+    fn shutdown_reports_cleanup_failure_and_preserves_failed_state() {
+        let mut manager = MountManager::new(FakeHost {
+            fail_mount: false,
+            fail_unmount: true,
+            unmount_calls: 0,
+        });
+        manager.mount().expect("mount");
+
+        let error = manager
+            .shutdown()
+            .expect_err("shutdown must report failure");
+        assert_eq!(error.category(), ErrorCategory::WinFspFailure);
+        assert_eq!(manager.status(), MountStatus::Failed);
+        assert_eq!(manager.host.unmount_calls, 1);
+    }
+
+    #[test]
+    fn drop_attempts_cleanup_for_a_mounted_manager() {
+        let unmount_calls = Rc::new(Cell::new(0));
+        let observed_calls = Rc::clone(&unmount_calls);
+        {
+            let mut manager = MountManager::new(DropHost { unmount_calls });
+            manager.mount().expect("mount");
+        }
+        assert_eq!(observed_calls.get(), 1);
+    }
+
+    struct DropHost {
+        unmount_calls: Rc<Cell<usize>>,
+    }
+
+    impl MountHost for DropHost {
+        fn mount(&mut self) -> Result<()> {
+            Ok(())
+        }
+
+        fn unmount(&mut self) -> Result<()> {
+            self.unmount_calls.set(self.unmount_calls.get() + 1);
+            Ok(())
+        }
     }
 }

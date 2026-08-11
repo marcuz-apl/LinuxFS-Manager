@@ -538,22 +538,35 @@ impl WindowsSourceProvider {
 #[cfg(windows)]
 impl SourceProvider for WindowsSourceProvider {
     fn refresh(&mut self) -> linuxfs_core::Result<Vec<SourceViewModel>> {
-        Ok(linuxfs_windows::discover_physical_disks(32)
+        Ok(linuxfs_windows::discover_physical_partitions(32)
             .into_iter()
-            .map(|disk| SourceViewModel {
-                id: SourceId((1_u64 << 63) | u64::from(disk.index)),
-                kind: SourceKind::PhysicalDisk,
-                display_name: format!("PhysicalDrive{}", disk.index),
-                source_description: disk.source_path.to_string_lossy().into_owned(),
-                source_path: disk.source_path.to_string_lossy().into_owned(),
-                partition_range: None,
-                filesystem_type: None,
-                label: None,
-                uuid: None,
-                size_bytes: Some(disk.size_bytes),
-                status: SourceStatus::Detected,
-                mount_point: None,
-                read_only: true,
+            .map(|physical| {
+                let disk_index = physical.disk_index;
+                let partition = physical.partition;
+                let source_path = linuxfs_windows::physical_disk_path(disk_index);
+                SourceViewModel {
+                    id: SourceId(
+                        (1_u64 << 63) | (u64::from(disk_index) << 32) | u64::from(partition.number),
+                    ),
+                    kind: SourceKind::Partition,
+                    display_name: format!(
+                        "PhysicalDrive{} partition {}",
+                        disk_index, partition.number
+                    ),
+                    source_description: source_path.to_string_lossy().into_owned(),
+                    source_path: source_path.to_string_lossy().into_owned(),
+                    partition_range: Some((partition.byte_offset, partition.byte_length)),
+                    filesystem_type: Some(physical.filesystem.filesystem_type),
+                    label: physical.filesystem.label,
+                    uuid: physical
+                        .filesystem
+                        .uuid
+                        .map(|uuid| uuid.iter().map(|byte| format!("{byte:02x}")).collect()),
+                    size_bytes: Some(partition.byte_length),
+                    status: SourceStatus::Compatible,
+                    mount_point: None,
+                    read_only: true,
+                }
             })
             .collect())
     }

@@ -3,19 +3,22 @@
 LinuxFS Manager is a Windows application for safely reading Linux Ext2, Ext3,
 and Ext4 filesystems from physical disks, partitions, and raw disk images.
 
-## Milestone 1 status
+## Current status
 
-The repository now provides a tested, read-only image-inspection core in Rust:
+The repository provides a tested, read-only Rust core and an early Slint/WinFsp
+integration path:
 
 - exact positional reads from raw image files through read-only handles;
 - direct-image, MBR, extended/logical MBR, and GPT layout discovery;
 - checked offsets, bounded allocations, cycle-safe EBR traversal, and GPT CRC validation;
 - source-integrity regression tests that compare image bytes before and after inspection;
-- structured errors for malformed or unsupported partition metadata.
+- structured errors for malformed or unsupported partition metadata;
+- read-only filesystem metadata and partition-backed image mounting;
+- a Slint preview connected to the read-only mount service.
 
-This milestone does not yet include Ext2/Ext3/Ext4 parsing, physical-device access,
-WinFsp mounting, Slint UI, configuration, logging, or packaging. Those are later
-milestones.
+The production Windows application, physical-device discovery, installer, and
+final prerequisite checks remain in progress. See [docs/packaging.md](docs/packaging.md)
+for the V1 packaging contract and current deployment limitations.
 
 ## V1 safety promise
 

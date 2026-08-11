@@ -2520,6 +2520,7 @@ name = "linuxfs-windows"
 version = "0.1.0"
 dependencies = [
  "linuxfs-core",
+ "linuxfs-ext",
 ]
 
 [[package]]
