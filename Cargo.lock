@@ -52,3 +52,10 @@ version = "0.1.0"
 dependencies = [
  "linuxfs-core",
 ]
+
+[[package]]
+name = "linuxfs-winfsp"
+version = "0.1.0"
+dependencies = [
+ "linuxfs-core",
+]
