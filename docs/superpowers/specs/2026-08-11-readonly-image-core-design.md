@@ -77,11 +77,14 @@ an unreviewed filesystem/container abstraction into V1.
 The public block interface is intentionally read-only:
 
 ```rust
-pub trait BlockReader {
+pub trait BlockReader: Send + Sync {
     fn len(&self) -> Result<u64>;
     fn read_exact_at(&self, offset: u64, buffer: &mut [u8]) -> Result<()>;
 }
 ```
+
+The trait is `Send + Sync` so later worker and WinFsp consumers can share a
+reader without changing the core contract.
 
 The raw image reader will expose an opening operation equivalent to:
 
@@ -113,7 +116,14 @@ pub struct Partition {
     pub type_identifier: PartitionType,
 }
 
-pub fn discover_layout(reader: &dyn BlockReader) -> Result<SourceLayout>;
+pub struct BlockGeometry {
+    pub logical_sector_size: u32,
+}
+
+pub fn discover_layout(
+    reader: &dyn BlockReader,
+    geometry: BlockGeometry,
+) -> Result<SourceLayout>;
 ```
 
 The exact public field types may use stronger newtypes during implementation,
@@ -122,9 +132,11 @@ the reader length.
 
 ## Partition parsing rules
 
-The first milestone uses a 512-byte logical sector for raw image parsing. A
-future physical-device reader may provide device-specific sector information,
-but it is not part of this milestone.
+The first milestone passes a 512-byte logical sector for raw image parsing.
+Discovery validates the supplied geometry before using it in offset arithmetic.
+A future physical-device reader will pass the device logical sector size
+reported by Windows, so physical support does not require redesigning the core
+API. Unsupported geometry is rejected rather than guessed.
 
 ### MBR
 

@@ -1,8 +1,8 @@
 # LinuxFS Manager V1 Design
 
 **Date:** 2026-08-11  
-**Status:** Approved in conversation; awaiting written-spec review  
-**Scope:** Full staged V1 implementation
+**Status:** Roadmap approved in conversation; revised after design review
+**Scope:** V1 roadmap; each milestone requires its own approved design and plan
 
 ## Goal
 
@@ -22,6 +22,8 @@ integration are added.
 - No database is used for V1 configuration or filesystem metadata.
 - QML remains a presentation layer and never parses disk structures.
 - WinFsp is used as a user-mode bridge; no custom kernel driver is introduced.
+- Shared block, filesystem, and file-handle interfaces have explicit
+  thread-safety contracts before background or WinFsp consumers are added.
 
 ## Architecture
 
@@ -51,26 +53,48 @@ milestone follows the existing approved image-core design in
 
 ## Core contracts
 
-The public block interface is read-only:
+The public block interface is read-only and safe to share across worker and
+filesystem callback threads:
 
 ```rust
-pub trait BlockReader {
+pub trait BlockReader: Send + Sync {
     fn len(&self) -> Result<u64>;
     fn read_exact_at(&self, offset: u64, buffer: &mut [u8]) -> Result<()>;
 }
 ```
 
+Partition discovery receives source geometry and validates it:
+
+```rust
+pub struct BlockGeometry {
+    pub logical_sector_size: u32,
+}
+
+pub fn discover_layout(
+    reader: &dyn BlockReader,
+    geometry: BlockGeometry,
+) -> Result<SourceLayout>;
+```
+
+Raw images use a documented 512-byte logical-sector default in V1. Physical
+sources use the logical sector size queried from Windows. Unsupported geometry
+is rejected rather than guessed.
+
 The generic filesystem interface contains inspection and read operations only:
 
 ```rust
-pub trait ReadOnlyFilesystem {
+pub trait ReadOnlyFilesystem: Send + Sync {
     fn info(&self) -> Result<FilesystemInfo>;
     fn lookup(&self, path: &FsPath) -> Result<NodeMetadata>;
     fn read_dir(&self, path: &FsPath) -> Result<Vec<DirectoryEntry>>;
-    fn open_file(&self, path: &FsPath) -> Result<Box<dyn ReadOnlyFile>>;
+    fn open_file(&self, path: &FsPath) -> Result<Box<dyn ReadOnlyFile + Send + Sync>>;
     fn read_link(&self, path: &FsPath) -> Result<FsPath>;
 }
 ```
+
+File reads use explicit offsets and do not keep a shared mutable cursor. This
+allows worker and WinFsp callback threads to perform bounded reads without
+silently serializing the entire mounted filesystem.
 
 Image readers and physical-device readers open sources read-only. Partition
 views validate every offset and length before delegating reads. Filesystem
@@ -90,9 +114,18 @@ source path/device
   → optional read-only WinFsp mount
 ```
 
-The initial command-line surface will inspect raw images and report source
-layout, filesystem identity, compatibility, and metadata. The later desktop
-application will use the same Rust application services through CXX-Qt.
+Milestones 1 through 3 expose Rust library APIs and integration tests. V1 does
+not add a supported command-line product; the PRD keeps the `linuxfs` companion
+in V1.x. The desktop application uses the tested Rust services through CXX-Qt.
+
+## Planning boundary
+
+This document is the V1 roadmap, not a single implementation specification.
+Only Milestone 1 currently has an approved implementation-ready design:
+`2026-08-11-readonly-image-core-design.md`. Each later milestone receives a
+focused design, review, implementation plan, and verification cycle after its
+predecessor is complete. This keeps unresolved native integration decisions
+from leaking into the image core.
 
 ## Staged delivery
 
@@ -111,6 +144,12 @@ the dependency is suitable. Validate Ext2, Ext3, and Ext4 fixtures explicitly.
 Reject incompatible feature flags, unsafe recovery states, corrupt metadata,
 and unsupported parser capabilities with structured results.
 
+Before implementation, record the selected parser version, maintenance state,
+license, Windows support, unsupported Ext features, and adapter limitations.
+The milestone design also defines reproducible fixture generation, provenance,
+redistribution terms, and hashes; private or large filesystem images are not
+committed.
+
 ### Milestone 3: image integration
 
 Connect partition views and direct images to filesystem probing and file reads.
@@ -125,14 +164,27 @@ enumeration. Keep Windows API/handle details inside the Windows storage crate.
 Do not automate destructive disk preparation. Physical tests require
 expendable media and run only after image tests pass.
 
+The baseline privilege model keeps image workflows unelevated. Selecting a
+physical source may trigger an explicit, explained UAC relaunch of the
+application with the selected operation restored. V1 does not add a privileged
+service or IPC helper unless a concrete WinFsp or security requirement proves
+the relaunch model inadequate.
+
 ### Milestone 5: WinFsp and mount manager
 
 Add a Windows-only adapter translating volume information, metadata, directory
 enumeration, opens, reads, cleanup, close, and safe symlink/reparse behavior.
-All mutating callbacks explicitly deny create, write, truncate, delete, rename,
-mkdir, timestamp, attribute, and security-descriptor changes. Add a mount
-manager that owns mount lifecycle, validates mount points, prevents conflicts,
-and unmounts during orderly shutdown.
+Requests carrying create, write, truncate, delete, rename, mkdir, timestamp,
+attribute, or security mutation intent are denied according to the exact binding
+semantics. Normal read opens remain allowed. A mount manager owns mount
+lifecycle, validates mount points, prevents conflicts, and unmounts cleanly.
+
+Before implementation, a dedicated Windows namespace mapping design must define
+non-UTF-8 names, reserved Windows names, case-colliding directory entries,
+separator and `..` handling, symlink containment, hard links, stable file IDs,
+and representation of device nodes, sockets, and FIFOs. The WinFsp binding and
+exact runtime version must be selected only after API, maintenance, license,
+and write-denial behavior are reviewed.
 
 ### Milestone 6: Qt/QML application
 
@@ -148,6 +200,12 @@ Add structured logging and a versioned TOML configuration at
 falls back safely, and recent image paths remain bounded. Package the native
 application honestly, detecting missing Qt/WinFsp prerequisites rather than
 claiming a standalone binary when a driver is required.
+
+Atomic replacement must use Windows replacement semantics that preserve either
+the old complete file or the new complete file across failure; deleting the old
+file before rename is not acceptable. Before packaging, record the selected
+CXX-Qt, Qt, WinFsp, and binding versions plus their licenses and redistribution
+requirements.
 
 ## Error behavior
 
