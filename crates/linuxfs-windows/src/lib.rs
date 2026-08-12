@@ -161,13 +161,27 @@ pub fn discover_physical_disks(max_index: u32) -> Vec<PhysicalDiskInfo> {
 #[cfg(windows)]
 #[allow(unsafe_code)]
 fn physical_disk_size(file: &File) -> Result<u64> {
-    use windows_sys::Win32::Storage::FileSystem::GetFileSizeEx;
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+
+    const IOCTL_DISK_GET_LENGTH_INFO: u32 = 0x0007_405c;
 
     let mut size = 0_i64;
-    // SAFETY: the handle belongs to `file` and remains valid for this call;
-    // `size` is a valid writable output pointer.
-    let success = unsafe { GetFileSizeEx(file.as_raw_handle(), &mut size) };
-    if success == 0 || size < 0 {
+    let mut returned = 0_u32;
+    // SAFETY: the handle belongs to `file`; the input buffer is empty and the
+    // output buffer is a valid writable DISK_LENGTH_INFO-compatible i64.
+    let success = unsafe {
+        DeviceIoControl(
+            file.as_raw_handle(),
+            IOCTL_DISK_GET_LENGTH_INFO,
+            std::ptr::null(),
+            0,
+            (&mut size as *mut i64).cast(),
+            std::mem::size_of::<i64>() as u32,
+            &mut returned,
+            std::ptr::null_mut(),
+        )
+    };
+    if success == 0 || returned < std::mem::size_of::<i64>() as u32 || size < 0 {
         return Err(Error::new(
             ErrorCategory::StorageAccess,
             "cannot determine physical disk size",

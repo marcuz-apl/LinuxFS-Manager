@@ -19,6 +19,7 @@ slint::slint! {
         callback open_explorer_clicked();
         callback details_clicked();
         callback refresh_clicked();
+        callback scan_drives_clicked();
         callback open_image_clicked();
         callback source_selected(int);
 
@@ -30,6 +31,7 @@ slint::slint! {
                 Text { text: "LinuxFS Manager"; font-size: 28px; font-weight: 700; }
                 Rectangle { horizontal-stretch: 1; }
                 Button { text: "Refresh"; clicked => { root.refresh_clicked(); } }
+                Button { text: "Scan Drives"; clicked => { root.scan_drives_clicked(); } }
                 Button { text: "Open Image…"; clicked => { root.open_image_clicked(); } }
             }
 
@@ -262,6 +264,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             window.set_status("Refreshing read-only image source…".into());
         }
         start_probe_for_refresh(path);
+    });
+    let start_refresh_for_scan = start_refresh.clone();
+    window.on_scan_drives_clicked(move || {
+        start_refresh_for_scan();
     });
     let state_for_open = Arc::clone(&state);
     let start_probe_for_open = start_probe.clone();
