@@ -19,5 +19,8 @@ slint = "1.13"
 rfd = "0.15"
 winfsp = "0.13"
 
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+
 [lints]
 workspace = true

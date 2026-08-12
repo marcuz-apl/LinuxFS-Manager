@@ -514,7 +514,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             window.set_source_name("No compatible physical source".into());
                             window.set_source_details(
-                                "No supported Ext filesystem was found.".into(),
+                                "No supported Ext filesystem was found, or Windows denied raw-disk access. Run elevated to scan physical disks.".into(),
                             );
                             window.set_can_mount(false);
                             window.set_can_unmount(false);
