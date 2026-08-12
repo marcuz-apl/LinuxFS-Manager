@@ -551,7 +551,7 @@ impl WindowsSourceProvider {
 #[cfg(windows)]
 impl SourceProvider for WindowsSourceProvider {
     fn refresh(&mut self) -> linuxfs_core::Result<Vec<SourceViewModel>> {
-        Ok(linuxfs_windows::discover_physical_partitions(32)
+        Ok(linuxfs_windows::discover_physical_partitions_checked(32)?
             .into_iter()
             .map(|physical| {
                 let disk_index = physical.disk_index;

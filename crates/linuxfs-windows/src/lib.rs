@@ -3,11 +3,7 @@ use linuxfs_core::{
     Result, SourceLayout, discover_layout, validate_read_range,
 };
 use std::{
-    fs::{File, OpenOptions},
-    os::windows::fs::FileExt,
-    os::windows::io::AsRawHandle,
-    path::PathBuf,
-    sync::Arc,
+    fs::File, os::windows::fs::FileExt, os::windows::io::AsRawHandle, path::PathBuf, sync::Arc,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,29 +61,35 @@ pub fn probe_physical_partitions(
 }
 
 pub fn discover_physical_partitions(max_index: u32) -> Vec<PhysicalPartitionInfo> {
-    (0..max_index)
-        .filter_map(|index| {
-            let reader = Arc::new(PhysicalDiskReader::open(index).ok()?) as Arc<dyn BlockReader>;
-            probe_physical_partitions(index, reader).ok()
-        })
-        .flatten()
-        .collect()
+    discover_physical_partitions_checked(max_index).unwrap_or_default()
+}
+
+pub fn discover_physical_partitions_checked(max_index: u32) -> Result<Vec<PhysicalPartitionInfo>> {
+    let mut opened = 0_u32;
+    let mut results = Vec::new();
+    (0..max_index).for_each(|index| {
+        let Ok(reader) = PhysicalDiskReader::open(index) else {
+            return;
+        };
+        opened = opened.saturating_add(1);
+        let reader = Arc::new(reader) as Arc<dyn BlockReader>;
+        if let Ok(mut partitions) = probe_physical_partitions(index, reader) {
+            results.append(&mut partitions);
+        }
+    });
+    if opened == 0 {
+        return Err(Error::new(
+            ErrorCategory::StorageAccess,
+            "no physical disks could be opened read-only; run as administrator if Windows denies raw-disk access",
+        ));
+    }
+    Ok(results)
 }
 
 impl PhysicalDiskReader {
     pub fn open(index: u32) -> Result<Self> {
         let path = physical_disk_path(index);
-        let file = OpenOptions::new()
-            .read(true)
-            .write(false)
-            .open(&path)
-            .map_err(|source| {
-                Error::with_source(
-                    ErrorCategory::StorageAccess,
-                    "cannot open physical disk read-only",
-                    source,
-                )
-            })?;
+        let file = open_physical_disk(&path)?;
         let size_bytes = physical_disk_size(&file)?;
         Ok(Self { file, size_bytes })
     }
@@ -95,6 +97,46 @@ impl PhysicalDiskReader {
     pub fn size_bytes(&self) -> u64 {
         self.size_bytes
     }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn open_physical_disk(path: &std::path::Path) -> Result<File> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::io::FromRawHandle;
+    use windows_sys::Win32::Foundation::{GENERIC_READ, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        OPEN_EXISTING,
+    };
+
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    // SAFETY: `wide` is a valid NUL-terminated path and all flags request
+    // read-only access with sharing enabled for other Windows disk users.
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            std::ptr::null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return Err(Error::with_source(
+            ErrorCategory::StorageAccess,
+            format!("cannot open {} read-only", path.display()),
+            std::io::Error::last_os_error(),
+        ));
+    }
+    // SAFETY: `handle` is a valid owned Windows file handle from CreateFileW.
+    Ok(unsafe { File::from_raw_handle(handle as _) })
 }
 
 impl BlockReader for PhysicalDiskReader {
