@@ -2579,6 +2579,7 @@ version = "0.1.0"
 dependencies = [
  "linuxfs-core",
  "linuxfs-ext",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

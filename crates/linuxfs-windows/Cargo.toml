@@ -9,5 +9,8 @@ publish = false
 linuxfs-core = { path = "../linuxfs-core" }
 linuxfs-ext = { path = "../linuxfs-ext" }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
+
 [lints]
 workspace = true

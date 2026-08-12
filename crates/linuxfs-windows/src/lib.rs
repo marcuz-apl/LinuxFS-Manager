@@ -5,6 +5,7 @@ use linuxfs_core::{
 use std::{
     fs::{File, OpenOptions},
     os::windows::fs::FileExt,
+    os::windows::io::AsRawHandle,
     path::PathBuf,
     sync::Arc,
 };
@@ -87,16 +88,7 @@ impl PhysicalDiskReader {
                     source,
                 )
             })?;
-        let size_bytes = file
-            .metadata()
-            .map_err(|source| {
-                Error::with_source(
-                    ErrorCategory::StorageAccess,
-                    "cannot read physical disk metadata",
-                    source,
-                )
-            })?
-            .len();
+        let size_bytes = physical_disk_size(&file)?;
         Ok(Self { file, size_bytes })
     }
 
@@ -164,6 +156,29 @@ pub fn discover_physical_disks(max_index: u32) -> Vec<PhysicalDiskInfo> {
             })
         })
         .collect()
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn physical_disk_size(file: &File) -> Result<u64> {
+    use windows_sys::Win32::Storage::FileSystem::GetFileSizeEx;
+
+    let mut size = 0_i64;
+    // SAFETY: the handle belongs to `file` and remains valid for this call;
+    // `size` is a valid writable output pointer.
+    let success = unsafe { GetFileSizeEx(file.as_raw_handle(), &mut size) };
+    if success == 0 || size < 0 {
+        return Err(Error::new(
+            ErrorCategory::StorageAccess,
+            "cannot determine physical disk size",
+        ));
+    }
+    u64::try_from(size).map_err(|_| {
+        Error::new(
+            ErrorCategory::StorageAccess,
+            "physical disk size does not fit u64",
+        )
+    })
 }
 
 #[cfg(test)]
