@@ -2477,6 +2477,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "linuxfs-cli"
+version = "0.1.0"
+dependencies = [
+ "linuxfs-core",
+ "linuxfs-ext",
+ "linuxfs-storage",
+]
+
+[[package]]
 name = "linuxfs-config"
 version = "0.1.0"
 dependencies = [
@@ -2504,6 +2513,7 @@ name = "linuxfs-preview"
 version = "0.1.0"
 dependencies = [
  "linuxfs-app",
+ "linuxfs-core",
  "slint",
  "winfsp",
 ]

@@ -1,21 +1,18 @@
 [package]
-name = "linuxfs-preview"
+name = "linuxfs-cli"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 publish = false
 
 [[bin]]
-name = "LinuxFSManager"
+name = "linuxfs"
 path = "src/main.rs"
 
 [dependencies]
-linuxfs-app = { path = "../linuxfs-app" }
 linuxfs-core = { path = "../linuxfs-core" }
-slint = "1.13"
-
-[target.'cfg(windows)'.dependencies]
-winfsp = "0.13"
+linuxfs-ext = { path = "../linuxfs-ext" }
+linuxfs-storage = { path = "../linuxfs-storage" }
 
 [lints]
 workspace = true

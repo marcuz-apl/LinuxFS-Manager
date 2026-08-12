@@ -48,11 +48,34 @@ impl ExtReadOnlyBackend {
         let filesystem = Self::load(&self.reader)?;
         let label = filesystem.label().to_str().ok().map(str::to_owned);
         let uuid = Some(*filesystem.uuid().as_bytes());
+        let (block_size, total_size, free_size) = self.superblock_sizes()?;
         Ok(FilesystemInfo {
             filesystem_type: "ext2/ext3/ext4".to_owned(),
             label,
             uuid,
+            block_size,
+            total_size,
+            free_size,
         })
+    }
+
+    fn superblock_sizes(&self) -> Result<(Option<u32>, Option<u64>, Option<u64>)> {
+        let mut superblock = [0u8; 1024];
+        self.reader.read_exact_at(1024, &mut superblock)?;
+        let log_block_size = read_u32_le(&superblock, 0x18);
+        let Some(block_size) = 1024u64.checked_shl(log_block_size) else {
+            return Ok((None, None, None));
+        };
+        let Some(block_size) = u32::try_from(block_size).ok() else {
+            return Ok((None, None, None));
+        };
+        let blocks = u64::from(read_u32_le(&superblock, 0x04))
+            | (u64::from(read_u32_le(&superblock, 0x150)) << 32);
+        let free_blocks = u64::from(read_u32_le(&superblock, 0x0c))
+            | (u64::from(read_u32_le(&superblock, 0x158)) << 32);
+        let total_size = blocks.checked_mul(u64::from(block_size));
+        let free_size = free_blocks.checked_mul(u64::from(block_size));
+        Ok((Some(block_size), total_size, free_size))
     }
 
     fn load(reader: &Arc<dyn BlockReader>) -> Result<Ext4> {
@@ -153,6 +176,15 @@ fn file_kind(file_type: ext4_view::FileType) -> FileKind {
     } else {
         FileKind::Other
     }
+}
+
+fn read_u32_le(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+    ])
 }
 
 fn map_error(error: Ext4Error) -> Error {

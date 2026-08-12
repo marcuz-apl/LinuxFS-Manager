@@ -62,6 +62,9 @@ pub struct FilesystemInfo {
     pub filesystem_type: String,
     pub label: Option<String>,
     pub uuid: Option<[u8; 16]>,
+    pub block_size: Option<u32>,
+    pub total_size: Option<u64>,
+    pub free_size: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -346,6 +346,9 @@ mod tests {
                 filesystem_type: "fake".to_owned(),
                 label: None,
                 uuid: None,
+                block_size: None,
+                total_size: None,
+                free_size: None,
             })
         }
 

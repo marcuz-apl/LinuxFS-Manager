@@ -5,8 +5,8 @@ and Ext4 filesystems from physical disks, partitions, and raw disk images.
 
 ## Current status
 
-The repository provides a tested, read-only Rust core and an early Slint/WinFsp
-integration path:
+The repository provides a tested, read-only Rust core, a Slint/WinFsp desktop
+path, and a small inspection CLI:
 
 - exact positional reads from raw image files through read-only handles;
 - direct-image, MBR, extended/logical MBR, and GPT layout discovery;
@@ -14,11 +14,15 @@ integration path:
 - source-integrity regression tests that compare image bytes before and after inspection;
 - structured errors for malformed or unsupported partition metadata;
 - read-only filesystem metadata and partition-backed image mounting;
-- a Slint preview connected to the read-only mount service.
+- Ext directory enumeration, file streaming, symlink reads, and filesystem
+  capacity metadata;
+- a Slint desktop shell connected to Windows source discovery and the
+  read-only mount service;
+- `linuxfs inspect`, `linuxfs ls`, and `linuxfs cat` for scripted image access.
 
-The production Windows application, physical-device discovery, installer, and
-final prerequisite checks remain in progress. See [docs/packaging.md](docs/packaging.md)
-for the V1 packaging contract and current deployment limitations.
+Physical-device access and WinFsp mounting require Windows and the WinFsp
+runtime. The installer/release pipeline remains separate from the tested core;
+see [docs/packaging.md](docs/packaging.md) for the prerequisite contract.
 
 ## V1 safety promise
 
@@ -27,6 +31,16 @@ means copying them from a mounted Linux source to a Windows destination.
 
 See [PRD.md](PRD.md) for the full requirements and [AGENTS.md](AGENTS.md) for
 development and safety rules.
+
+## CLI inspection
+
+The CLI never opens a source for writing and streams regular-file output:
+
+```powershell
+cargo run -p linuxfs-cli -- inspect .\disk.img
+cargo run -p linuxfs-cli -- ls .\disk.img /
+cargo run -p linuxfs-cli -- cat .\disk.img /home/user/readme.txt
+```
 
 ## UI smoke test
 

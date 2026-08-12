@@ -2,11 +2,12 @@
 
 use std::ffi::c_void;
 
-use linuxfs_core::{FileKind, FsPath, NodeMetadata, ReadOnlyFilesystem};
+use linuxfs_core::{DirectoryEntry, FileKind, FsPath, NodeMetadata, ReadOnlyFilesystem};
 use winfsp::{
     FspError, U16CStr,
     filesystem::{
-        FileInfo, FileSecurity, FileSystemContext, ModificationDescriptor, OpenFileInfo, VolumeInfo,
+        DirBuffer, DirInfo, DirMarker, FileInfo, FileSecurity, FileSystemContext,
+        ModificationDescriptor, OpenFileInfo, VolumeInfo, WideNameInfo,
     },
     host::{FileSystemHost, VolumeParams},
 };
@@ -39,10 +40,11 @@ pub fn deny_mutation() -> winfsp::Result<()> {
     Err(FspError::WIN32(ERROR_ACCESS_DENIED))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct OpenHandle {
     pub(crate) path: FsPath,
     pub(crate) metadata: NodeMetadata,
+    pub(crate) directory_buffer: Option<DirBuffer>,
 }
 
 pub struct ReadOnlyContext<F> {
@@ -82,6 +84,38 @@ where
         file_info.file_size = metadata.size;
         file_info.allocation_size = metadata.size;
     }
+
+    fn directory_entries(&self, path: &FsPath) -> linuxfs_core::Result<Vec<DirectoryEntry>> {
+        let mut entries = vec![
+            DirectoryEntry {
+                name: ".".to_owned(),
+                metadata: NodeMetadata {
+                    kind: FileKind::Directory,
+                    size: 0,
+                    permissions: 0,
+                    uid: 0,
+                    gid: 0,
+                },
+            },
+            DirectoryEntry {
+                name: "..".to_owned(),
+                metadata: NodeMetadata {
+                    kind: FileKind::Directory,
+                    size: 0,
+                    permissions: 0,
+                    uid: 0,
+                    gid: 0,
+                },
+            },
+        ];
+        entries.extend(
+            self.dispatcher
+                .read_dir(path)?
+                .into_iter()
+                .filter(|entry| entry.name != "." && entry.name != ".."),
+        );
+        Ok(entries)
+    }
 }
 
 impl<F> FileSystemContext for ReadOnlyContext<F>
@@ -115,7 +149,11 @@ where
         let path = Self::path(file_name)?;
         let metadata = self.dispatcher.lookup(&path).map_err(map_error)?;
         Self::fill_file_info(metadata, file_info.as_mut());
-        Ok(OpenHandle { path, metadata })
+        Ok(OpenHandle {
+            path,
+            metadata,
+            directory_buffer: (metadata.kind == FileKind::Directory).then(DirBuffer::new),
+        })
     }
 
     fn close(&self, _context: Self::FileContext) {}
@@ -140,6 +178,42 @@ where
             .read_file_at(&context.path, offset, buffer)
             .map_err(map_error)?;
         u32::try_from(count).map_err(|_| FspError::WIN32(ERROR_INVALID_PARAMETER))
+    }
+
+    fn read_directory(
+        &self,
+        context: &Self::FileContext,
+        _pattern: Option<&U16CStr>,
+        marker: DirMarker,
+        buffer: &mut [u8],
+    ) -> winfsp::Result<u32> {
+        let Some(directory_buffer) = context.directory_buffer.as_ref() else {
+            return Err(FspError::WIN32(ERROR_INVALID_PARAMETER));
+        };
+        if marker.is_none() {
+            let entries = self.directory_entries(&context.path).map_err(map_error)?;
+            let capacity_hint = u32::try_from(entries.len()).unwrap_or(u32::MAX);
+            let lock = directory_buffer.acquire(true, Some(capacity_hint))?;
+            for entry in entries {
+                let mut info = DirInfo::<255>::new();
+                info.set_name(&entry.name)?;
+                Self::fill_file_info(entry.metadata, info.file_info_mut());
+                lock.write(&mut info)?;
+            }
+        }
+        Ok(directory_buffer.read(marker, buffer))
+    }
+
+    fn get_volume_info(&self, out_volume_info: &mut VolumeInfo) -> winfsp::Result<()> {
+        let info = self.dispatcher.info().map_err(map_error)?;
+        out_volume_info.total_size = info.total_size.unwrap_or(0);
+        out_volume_info.free_size = info.free_size.unwrap_or(0);
+        out_volume_info.set_volume_label(
+            info.label
+                .as_deref()
+                .unwrap_or(info.filesystem_type.as_str()),
+        );
+        Ok(())
     }
 
     fn write(
@@ -335,6 +409,78 @@ fn map_error(error: linuxfs_core::Error) -> FspError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct FakeFilesystem;
+
+    impl ReadOnlyFilesystem for FakeFilesystem {
+        fn info(&self) -> linuxfs_core::Result<linuxfs_core::FilesystemInfo> {
+            Ok(linuxfs_core::FilesystemInfo {
+                filesystem_type: "ext4".to_owned(),
+                label: Some("TEST".to_owned()),
+                uuid: None,
+                block_size: None,
+                total_size: None,
+                free_size: None,
+            })
+        }
+
+        fn lookup(&self, _path: &FsPath) -> linuxfs_core::Result<NodeMetadata> {
+            Ok(NodeMetadata {
+                kind: FileKind::Directory,
+                size: 0,
+                permissions: 0o755,
+                uid: 0,
+                gid: 0,
+            })
+        }
+
+        fn read_dir(
+            &self,
+            _path: &FsPath,
+        ) -> linuxfs_core::Result<Vec<linuxfs_core::DirectoryEntry>> {
+            Ok(vec![linuxfs_core::DirectoryEntry {
+                name: "hello.txt".to_owned(),
+                metadata: NodeMetadata {
+                    kind: FileKind::Regular,
+                    size: 5,
+                    permissions: 0o644,
+                    uid: 1000,
+                    gid: 1000,
+                },
+            }])
+        }
+
+        fn read_file_at(
+            &self,
+            _path: &FsPath,
+            _offset: u64,
+            _destination: &mut [u8],
+        ) -> linuxfs_core::Result<usize> {
+            Ok(0)
+        }
+
+        fn read_link(&self, _path: &FsPath) -> linuxfs_core::Result<FsPath> {
+            Err(linuxfs_core::Error::new(
+                linuxfs_core::ErrorCategory::UnsupportedFilesystem,
+                "not a symlink",
+            ))
+        }
+    }
+
+    #[test]
+    fn directory_listing_adds_windows_navigation_entries() {
+        let context = ReadOnlyContext::new(FakeFilesystem);
+        let entries = context
+            .directory_entries(&FsPath::root())
+            .expect("directory listing");
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            vec![".", "..", "hello.txt"]
+        );
+    }
 
     #[test]
     fn native_configuration_is_constructible() {

@@ -29,6 +29,7 @@ pub struct SourceViewModel {
     pub source_description: String,
     pub source_path: String,
     pub partition_range: Option<(u64, u64)>,
+    pub physical_disk_index: Option<u32>,
     pub filesystem_type: Option<String>,
     pub label: Option<String>,
     pub uuid: Option<String>,
@@ -120,6 +121,7 @@ mod tests {
             source_description: "Raw image".to_owned(),
             source_path: "fixture.img".to_owned(),
             partition_range: None,
+            physical_disk_index: None,
             filesystem_type: Some("ext4".to_owned()),
             label: Some("fixture".to_owned()),
             uuid: None,
@@ -147,6 +149,15 @@ mod tests {
         let mut source = compatible_source();
         source.read_only = false;
         assert!(!source.can_mount());
+    }
+
+    #[test]
+    fn physical_sources_retain_the_backing_disk_identity() {
+        let source = SourceViewModel {
+            physical_disk_index: Some(3),
+            ..compatible_source()
+        };
+        assert_eq!(source.physical_disk_index, Some(3));
     }
 
     #[test]
@@ -355,6 +366,7 @@ mod controller_tests {
             source_description: "Raw image".to_owned(),
             source_path: "fixture.img".to_owned(),
             partition_range: None,
+            physical_disk_index: None,
             filesystem_type: Some("ext4".to_owned()),
             label: None,
             uuid: None,
@@ -439,6 +451,7 @@ impl ImageSourceProvider {
             source_description: description,
             source_path: path.to_owned(),
             partition_range,
+            physical_disk_index: None,
             filesystem_type: Some(info.filesystem_type),
             label: info.label,
             uuid: info
@@ -548,7 +561,7 @@ impl SourceProvider for WindowsSourceProvider {
                     id: SourceId(
                         (1_u64 << 63) | (u64::from(disk_index) << 32) | u64::from(partition.number),
                     ),
-                    kind: SourceKind::Partition,
+                    kind: SourceKind::PhysicalDisk,
                     display_name: format!(
                         "PhysicalDrive{} partition {}",
                         disk_index, partition.number
@@ -556,6 +569,7 @@ impl SourceProvider for WindowsSourceProvider {
                     source_description: source_path.to_string_lossy().into_owned(),
                     source_path: source_path.to_string_lossy().into_owned(),
                     partition_range: Some((partition.byte_offset, partition.byte_length)),
+                    physical_disk_index: Some(disk_index),
                     filesystem_type: Some(physical.filesystem.filesystem_type),
                     label: physical.filesystem.label,
                     uuid: physical
@@ -606,6 +620,9 @@ mod provided_image_tests {
                 filesystem_type: "ext4".to_owned(),
                 label: None,
                 uuid: None,
+                block_size: None,
+                total_size: None,
+                free_size: None,
             },
         );
 
@@ -634,6 +651,36 @@ impl WindowsImageMountService {
             mounts: std::collections::HashMap::new(),
         }
     }
+
+    fn validate_mount_point(&self) -> linuxfs_core::Result<()> {
+        let point = self.mount_point.trim();
+        let bytes = point.as_bytes();
+        let is_drive_letter =
+            bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':';
+        if is_drive_letter {
+            Ok(())
+        } else {
+            Err(linuxfs_core::Error::new(
+                linuxfs_core::ErrorCategory::MountPointUnavailable,
+                format!("invalid mount point {point:?}; expected a drive letter such as L:"),
+            ))
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for WindowsImageMountService {
+    fn drop(&mut self) {
+        for (source_id, mut manager) in self.mounts.drain() {
+            if let Err(error) = manager.unmount() {
+                tracing::error!(
+                    source_id = source_id.0,
+                    error = %error,
+                    "failed to unmount source during application shutdown"
+                );
+            }
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -645,10 +692,12 @@ impl MountService for WindowsImageMountService {
         use linuxfs_winfsp::{MountManager, native::NativeMountHost};
         use std::sync::Arc;
 
+        self.validate_mount_point()?;
+
         if !source_kind_is_mountable(source.kind) {
             return Err(linuxfs_core::Error::new(
                 linuxfs_core::ErrorCategory::UnsupportedFilesystem,
-                "only raw image sources are currently mountable",
+                "source is not a supported mountable filesystem",
             ));
         }
         if self.mounts.contains_key(&source.id) {
@@ -657,8 +706,19 @@ impl MountService for WindowsImageMountService {
                 "source is already mounted",
             ));
         }
-        let image_reader: Arc<dyn BlockReader> =
-            Arc::new(RawImageReader::open(&source.source_path)?);
+        if !self.mounts.is_empty() {
+            return Err(linuxfs_core::Error::new(
+                linuxfs_core::ErrorCategory::MountPointUnavailable,
+                format!(
+                    "mount point {} is already in use by another source",
+                    self.mount_point
+                ),
+            ));
+        }
+        let image_reader: Arc<dyn BlockReader> = match source.physical_disk_index {
+            Some(index) => Arc::new(linuxfs_windows::PhysicalDiskReader::open(index)?),
+            None => Arc::new(RawImageReader::open(&source.source_path)?),
+        };
         let reader: Arc<dyn BlockReader> = match source.partition_range {
             Some((offset, length)) => Arc::new(PartitionReader::new(
                 Arc::clone(&image_reader),
@@ -713,5 +773,8 @@ impl MountService for WindowsImageMountService {
 
 #[cfg(windows)]
 fn source_kind_is_mountable(kind: SourceKind) -> bool {
-    matches!(kind, SourceKind::Image | SourceKind::Partition)
+    matches!(
+        kind,
+        SourceKind::Image | SourceKind::Partition | SourceKind::PhysicalDisk
+    )
 }

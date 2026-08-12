@@ -23,6 +23,9 @@ fn generated_ext_fixtures_are_read_only_and_probeable() {
             .unwrap_or_else(|error| panic!("{name} rejected: {error}"));
         let info = backend.info().expect("filesystem info reads");
         assert_eq!(info.filesystem_type, "ext2/ext3/ext4");
+        assert_eq!(info.block_size, Some(4096));
+        assert!(info.total_size.is_some_and(|size| size >= 32 * 1024 * 1024));
+        assert!(info.free_size.is_some_and(|size| size > 0));
         let root_path = FsPath::root();
         let metadata = backend.lookup(&root_path).expect("root metadata reads");
         assert!(metadata.kind == linuxfs_core::FileKind::Directory);

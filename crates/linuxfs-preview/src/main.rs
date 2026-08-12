@@ -1,5 +1,5 @@
 slint::slint! {
-    import { Button, VerticalBox, HorizontalBox, GroupBox, LineEdit } from "std-widgets.slint";
+    import { Button, VerticalBox, HorizontalBox, GroupBox, LineEdit, ListView } from "std-widgets.slint";
 
     export component MainWindow inherits Window {
         title: "LinuxFS Manager";
@@ -12,11 +12,15 @@ slint::slint! {
         in-out property <string> image_path: "";
         in-out property <bool> can_mount: false;
         in-out property <bool> can_unmount: false;
+        in-out property <int> selected_source: -1;
+        in-out property <[string]> source_names: [];
         callback mount_clicked();
         callback unmount_clicked();
+        callback open_explorer_clicked();
         callback details_clicked();
         callback refresh_clicked();
         callback open_image_clicked();
+        callback source_selected(int);
 
         VerticalBox {
             padding: 24px;
@@ -33,7 +37,7 @@ slint::slint! {
                 background: #fff4d6;
                 border-radius: 6px;
                 min-height: 46px;
-                Text { text: "READ ONLY — this preview never accesses or modifies a source filesystem."; color: #714f00; vertical-alignment: center; }
+                Text { text: "READ ONLY — source filesystems are never modified."; color: #714f00; vertical-alignment: center; }
             }
 
             GroupBox {
@@ -41,13 +45,28 @@ slint::slint! {
                 VerticalBox {
                     padding: 12px;
                     spacing: 6px;
-                    Text { text: source_name; font-weight: 700; }
-                    Text { text: source_details; }
+                    HorizontalBox {
+                        spacing: 12px;
+                        ListView {
+                            width: 260px;
+                            for name[index] in root.source_names : Rectangle {
+                                height: 32px;
+                                background: root.selected_source == index ? #dce7f5 : #ffffff00;
+                                Text { text: name; vertical-alignment: center; }
+                                TouchArea { clicked => { root.source_selected(index); } }
+                            }
+                        }
+                        VerticalBox {
+                            Text { text: source_name; font-weight: 700; }
+                            Text { text: source_details; }
+                        }
+                    }
                     LineEdit { text <=> root.image_path; placeholder-text: "CLI image path (first argument)"; }
                     HorizontalBox {
                         spacing: 8px;
                         Button { text: "Mount"; enabled: root.can_mount; clicked => { root.mount_clicked(); } }
                         Button { text: "Unmount"; enabled: root.can_unmount; clicked => { root.unmount_clicked(); } }
+                        Button { text: "Open in Explorer"; enabled: root.can_unmount; clicked => { root.open_explorer_clicked(); } }
                         Button { text: "Details"; clicked => { root.details_clicked(); } }
                     }
                 }
@@ -57,6 +76,18 @@ slint::slint! {
             Rectangle { vertical-stretch: 1; }
         }
     }
+}
+
+#[cfg(windows)]
+fn source_items(sources: &[linuxfs_app::SourceViewModel]) -> slint::ModelRc<slint::SharedString> {
+    use slint::{ModelRc, SharedString, VecModel};
+    use std::rc::Rc;
+
+    let items = sources
+        .iter()
+        .map(|source| SharedString::from(source.display_name.clone()))
+        .collect::<Vec<_>>();
+    ModelRc::from(Rc::new(VecModel::from(items)))
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -117,9 +148,9 @@ fn main() -> Result<(), slint::PlatformError> {
 #[cfg(windows)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use linuxfs_app::{
-        ImageSourceProvider, MountService, SourceProvider, SourceViewModel,
-        WindowsImageMountService,
-        runtime::{BackgroundOperation, spawn_background},
+        MountService, SourceProvider, SourceViewModel, WindowsImageMountService,
+        WindowsSourceProvider,
+        runtime::{BackgroundOperation, load_config, spawn_background},
     };
     use std::{
         env,
@@ -129,27 +160,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     enum PendingOperation {
         Probe(BackgroundOperation<SourceViewModel>, String),
+        Refresh(BackgroundOperation<Vec<SourceViewModel>>),
         Mount(BackgroundOperation<String>),
         Unmount(BackgroundOperation<()>),
     }
     #[allow(clippy::large_enum_variant)]
     enum CompletedOperation {
         Probe(Result<(SourceViewModel, String), String>),
+        Refresh(Result<Vec<SourceViewModel>, String>),
         Mount(Result<String, String>),
         Unmount(Result<(), String>),
     }
 
+    let config = load_config().unwrap_or_default();
+    let preferred_mount_point = config
+        .preferred_drive_letter
+        .as_deref()
+        .filter(|letter| letter.len() == 1 && letter.as_bytes()[0].is_ascii_alphabetic())
+        .map(|letter| format!("{letter}:"))
+        .unwrap_or_else(|| "L:".to_owned());
     let image = env::args_os()
         .nth(1)
         .map(|path| path.to_string_lossy().into_owned());
-    let provider = Arc::new(Mutex::new(ImageSourceProvider::new()));
-    let service = Arc::new(Mutex::new(WindowsImageMountService::new("L:")));
+    let provider = Arc::new(Mutex::new(WindowsSourceProvider::new()));
+    let service = Arc::new(Mutex::new(WindowsImageMountService::new(
+        preferred_mount_point,
+    )));
     let _winfsp = winfsp::winfsp_init()?;
     let window = MainWindow::new()?;
     let initial_path = image.unwrap_or_default();
     window.set_image_path(initial_path.clone().into());
     let state = Arc::new(Mutex::new(UiState::new(&initial_path)));
     let current_source = Arc::new(Mutex::new(None::<linuxfs_app::SourceViewModel>));
+    let sources_for_ui = Arc::new(Mutex::new(Vec::<linuxfs_app::SourceViewModel>::new()));
     let pending = Arc::new(Mutex::new(None::<PendingOperation>));
 
     let start_probe: Arc<dyn Fn(String)> = {
@@ -178,17 +221,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         })
     };
+    let start_refresh: Arc<dyn Fn()> = {
+        let provider = Arc::clone(&provider);
+        let pending = Arc::clone(&pending);
+        let weak = window.as_weak();
+        Arc::new(move || {
+            let provider_for_operation = Arc::clone(&provider);
+            let operation = spawn_background(move || {
+                let mut provider = provider_for_operation.lock().map_err(|_| {
+                    linuxfs_core::Error::new(
+                        linuxfs_core::ErrorCategory::Internal,
+                        "provider lock poisoned",
+                    )
+                })?;
+                provider.refresh()
+            });
+            if let Ok(mut pending) = pending.lock() {
+                *pending = Some(PendingOperation::Refresh(operation));
+            }
+            if let Some(window) = weak.upgrade() {
+                window.set_status("Scanning physical sources read-only…".into());
+            }
+        })
+    };
     let weak = window.as_weak();
     let state_for_refresh = Arc::clone(&state);
     let start_probe_for_refresh = start_probe.clone();
+    let start_refresh_for_refresh = start_refresh.clone();
     window.on_refresh_clicked(move || {
         let path = state_for_refresh
             .lock()
-            .expect("UI state lock")
-            .image_path
-            .clone();
+            .map(|state| state.image_path.clone())
+            .unwrap_or_default();
+        if path.trim().is_empty() {
+            start_refresh_for_refresh();
+            return;
+        }
         if let Some(window) = weak.upgrade() {
-            window.set_status("Refreshing read-only source…".into());
+            window.set_status("Refreshing read-only image source…".into());
         }
         start_probe_for_refresh(path);
     });
@@ -201,6 +271,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .image_path
             .clone();
         start_probe_for_open(path);
+    });
+    let source_rows = Arc::clone(&sources_for_ui);
+    let current_source_for_selection = Arc::clone(&current_source);
+    let state_for_selection = Arc::clone(&state);
+    let weak = window.as_weak();
+    window.on_source_selected(move |index| {
+        let source = source_rows.lock().ok().and_then(|sources| {
+            usize::try_from(index)
+                .ok()
+                .and_then(|index| sources.get(index).cloned())
+        });
+        let Some(source) = source else {
+            return;
+        };
+        let filesystem = source
+            .filesystem_type
+            .clone()
+            .unwrap_or_else(|| "Unknown".to_owned());
+        if let Ok(mut ui) = state_for_selection.lock() {
+            ui.source_name = source.display_name.clone();
+            ui.set_compatible(&filesystem, &source.source_description);
+            if let Some(window) = weak.upgrade() {
+                window.set_source_name(ui.source_name.clone().into());
+                window.set_source_details(ui.source_details.clone().into());
+                window.set_can_mount(ui.can_mount);
+                window.set_can_unmount(ui.can_unmount);
+                window.set_status("Source selected; source remains read-only".into());
+            }
+        }
+        if let Ok(mut current_source) = current_source_for_selection.lock() {
+            *current_source = Some(source);
+        }
     });
     let weak = window.as_weak();
     let source_slot = Arc::clone(&current_source);
@@ -267,6 +369,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     let weak = window.as_weak();
+    let source_slot = Arc::clone(&current_source);
+    let service_for_explorer = Arc::clone(&service);
+    window.on_open_explorer_clicked(move || {
+        let Some(source) = source_slot.lock().ok().and_then(|source| source.clone()) else {
+            if let Some(window) = weak.upgrade() {
+                window.set_status("Explorer failed: no source loaded".into());
+            }
+            return;
+        };
+        let Some(mount_point) = source.mount_point.as_deref() else {
+            if let Some(window) = weak.upgrade() {
+                window.set_status("Explorer unavailable: source is not mounted".into());
+            }
+            return;
+        };
+        let result = service_for_explorer
+            .lock()
+            .map_err(|_| "mount service lock poisoned".to_owned())
+            .and_then(|mut service| {
+                service
+                    .open_in_explorer(mount_point)
+                    .map_err(|error| error.to_string())
+            });
+        if let Some(window) = weak.upgrade() {
+            match result {
+                Ok(()) => window.set_status(format!("Opened {mount_point} in Explorer").into()),
+                Err(error) => window.set_status(format!("Explorer failed: {error}").into()),
+            }
+        }
+    });
+    let weak = window.as_weak();
     let state_for_details = Arc::clone(&state);
     window.on_details_clicked(move || {
         if let Some(window) = weak.upgrade() {
@@ -285,6 +418,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pending_for_timer = Arc::clone(&pending);
     let state_for_timer = Arc::clone(&state);
     let source_for_timer = Arc::clone(&current_source);
+    let sources_for_timer = Arc::clone(&sources_for_ui);
     let weak_for_timer = window.as_weak();
     timer.start(
         slint::TimerMode::Repeated,
@@ -304,6 +438,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .map(|source| (source, path.clone()))
                             .map_err(|error| error.to_string()),
                     )
+                }),
+                PendingOperation::Refresh(operation) => operation.try_receive().map(|result| {
+                    CompletedOperation::Refresh(result.map_err(|error| error.to_string()))
                 }),
                 PendingOperation::Mount(operation) => operation.try_receive().map(|result| {
                     CompletedOperation::Mount(result.map_err(|error| error.to_string()))
@@ -332,10 +469,62 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         window.set_source_details(ui.source_details.clone().into());
                         window.set_can_mount(ui.can_mount);
                         window.set_can_unmount(ui.can_unmount);
+                        if let Ok(mut sources) = sources_for_timer.lock() {
+                            *sources = vec![source.clone()];
+                            window.set_source_names(source_items(&sources));
+                        }
+                        window.set_selected_source(0);
                         *source_for_timer.lock().expect("source lock") = Some(source);
                         window.set_status("Source refreshed read-only".into());
                     }
+                    CompletedOperation::Refresh(Ok(sources)) => {
+                        if let Ok(mut rows) = sources_for_timer.lock() {
+                            *rows = sources.clone();
+                            window.set_source_names(source_items(&rows));
+                        }
+                        if let Some(source) = sources.first().cloned() {
+                            let filesystem = source
+                                .filesystem_type
+                                .clone()
+                                .unwrap_or_else(|| "Unknown".to_owned());
+                            let mut ui = state_for_timer.lock().expect("UI state lock");
+                            ui.image_path.clear();
+                            ui.source_name = source.display_name.clone();
+                            ui.set_compatible(&filesystem, &source.source_description);
+                            window.set_image_path("".into());
+                            window.set_source_name(ui.source_name.clone().into());
+                            window.set_source_details(ui.source_details.clone().into());
+                            window.set_can_mount(ui.can_mount);
+                            window.set_can_unmount(ui.can_unmount);
+                            window.set_selected_source(0);
+                            *source_for_timer.lock().expect("source lock") = Some(source);
+                            window.set_status("Physical sources refreshed read-only".into());
+                        } else {
+                            window.set_source_name("No compatible physical source".into());
+                            window.set_source_details(
+                                "No supported Ext filesystem was found.".into(),
+                            );
+                            window.set_can_mount(false);
+                            window.set_can_unmount(false);
+                            window.set_selected_source(-1);
+                            if let Ok(mut rows) = sources_for_timer.lock() {
+                                rows.clear();
+                                window.set_source_names(source_items(&rows));
+                            }
+                            *source_for_timer.lock().expect("source lock") = None;
+                            window.set_status("No compatible physical source found".into());
+                        }
+                    }
+                    CompletedOperation::Refresh(Err(error)) => {
+                        window.set_status(format!("Physical refresh failed: {error}").into());
+                    }
                     CompletedOperation::Mount(Ok(point)) => {
+                        if let Ok(mut source) = source_for_timer.lock() {
+                            if let Some(source) = source.as_mut() {
+                                source.mount_point = Some(point.clone());
+                                source.status = linuxfs_app::SourceStatus::Mounted;
+                            }
+                        }
                         state_for_timer
                             .lock()
                             .expect("UI state lock")
@@ -347,6 +536,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         window.set_can_unmount(true);
                     }
                     CompletedOperation::Unmount(Ok(())) => {
+                        if let Ok(mut source) = source_for_timer.lock() {
+                            if let Some(source) = source.as_mut() {
+                                source.mount_point = None;
+                                source.status = linuxfs_app::SourceStatus::Compatible;
+                            }
+                        }
                         state_for_timer
                             .lock()
                             .expect("UI state lock")
@@ -361,6 +556,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         window.set_source_details("The image could not be opened safely.".into());
                         window.set_can_mount(false);
                         window.set_can_unmount(false);
+                        window.set_selected_source(-1);
+                        if let Ok(mut rows) = sources_for_timer.lock() {
+                            rows.clear();
+                            window.set_source_names(source_items(&rows));
+                        }
                         *source_for_timer.lock().expect("source lock") = None;
                     }
                     CompletedOperation::Mount(Err(error)) => {
