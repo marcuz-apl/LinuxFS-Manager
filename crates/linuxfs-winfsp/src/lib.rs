@@ -34,6 +34,12 @@ pub fn check_winfsp() -> WinFspStatus {
     platform::check()
 }
 
+/// Loads the installed WinFsp runtime from its absolute path before any
+/// delay-loaded WinFsp API is called.
+pub fn prepare_runtime() -> Result<()> {
+    platform::prepare_runtime()
+}
+
 /// Returns the registered WinFsp installation directory without changing system state.
 pub fn winfsp_installation_dir() -> Option<PathBuf> {
     platform::installation_dir()
@@ -62,7 +68,16 @@ mod platform {
     use super::{WinFspStatus, WinFspUnavailableReason};
     use std::path::PathBuf;
 
+    pub fn prepare_runtime() -> linuxfs_core::Result<()> {
+        super::load_runtime_dll()
+    }
+
     pub fn check() -> WinFspStatus {
+        if super::load_runtime_dll().is_err() {
+            return WinFspStatus::Unavailable {
+                reason: WinFspUnavailableReason::RuntimeUnavailable,
+            };
+        }
         match winfsp::winfsp_init() {
             Ok(_init) => WinFspStatus::Available,
             Err(_) => WinFspStatus::Unavailable {
@@ -87,9 +102,56 @@ mod platform {
         }
     }
 
+    pub fn prepare_runtime() -> linuxfs_core::Result<()> {
+        Ok(())
+    }
+
     pub fn installation_dir() -> Option<PathBuf> {
         None
     }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn load_runtime_dll() -> linuxfs_core::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::System::LibraryLoader::LoadLibraryW;
+
+    let path = winfsp_runtime_path().ok_or_else(|| {
+        linuxfs_core::Error::new(
+            linuxfs_core::ErrorCategory::WinFspUnavailable,
+            "WinFsp installation was not found in the Windows registry",
+        )
+    })?;
+    if !path.is_file() {
+        return Err(linuxfs_core::Error::new(
+            linuxfs_core::ErrorCategory::WinFspUnavailable,
+            format!("WinFsp runtime DLL was not found at {}", path.display()),
+        ));
+    }
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    // SAFETY: `wide` is a valid, NUL-terminated UTF-16 path buffer. The
+    // returned module is intentionally kept loaded for the process lifetime.
+    let module = unsafe { LoadLibraryW(wide.as_ptr()) };
+    if module.is_null() {
+        return Err(linuxfs_core::Error::new(
+            linuxfs_core::ErrorCategory::WinFspUnavailable,
+            format!(
+                "Windows could not load WinFsp runtime at {}",
+                path.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn load_runtime_dll() -> linuxfs_core::Result<()> {
+    Ok(())
 }
 
 #[cfg(windows)]

@@ -2514,6 +2514,7 @@ version = "0.1.0"
 dependencies = [
  "linuxfs-app",
  "linuxfs-core",
+ "linuxfs-winfsp",
  "slint",
  "winfsp",
 ]

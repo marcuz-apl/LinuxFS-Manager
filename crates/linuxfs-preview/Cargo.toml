@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 linuxfs-app = { path = "../linuxfs-app" }
 linuxfs-core = { path = "../linuxfs-core" }
+linuxfs-winfsp = { path = "../linuxfs-winfsp" }
 slint = "1.13"
 
 [target.'cfg(windows)'.dependencies]

@@ -186,6 +186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service = Arc::new(Mutex::new(WindowsImageMountService::new(
         preferred_mount_point,
     )));
+    linuxfs_winfsp::prepare_runtime()?;
     let _winfsp = winfsp::winfsp_init()?;
     let window = MainWindow::new()?;
     let initial_path = image.unwrap_or_default();
@@ -519,11 +520,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         window.set_status(format!("Physical refresh failed: {error}").into());
                     }
                     CompletedOperation::Mount(Ok(point)) => {
-                        if let Ok(mut source) = source_for_timer.lock() {
-                            if let Some(source) = source.as_mut() {
-                                source.mount_point = Some(point.clone());
-                                source.status = linuxfs_app::SourceStatus::Mounted;
-                            }
+                        if let Ok(mut source) = source_for_timer.lock()
+                            && let Some(source) = source.as_mut()
+                        {
+                            source.mount_point = Some(point.clone());
+                            source.status = linuxfs_app::SourceStatus::Mounted;
                         }
                         state_for_timer
                             .lock()
@@ -536,11 +537,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         window.set_can_unmount(true);
                     }
                     CompletedOperation::Unmount(Ok(())) => {
-                        if let Ok(mut source) = source_for_timer.lock() {
-                            if let Some(source) = source.as_mut() {
-                                source.mount_point = None;
-                                source.status = linuxfs_app::SourceStatus::Compatible;
-                            }
+                        if let Ok(mut source) = source_for_timer.lock()
+                            && let Some(source) = source.as_mut()
+                        {
+                            source.mount_point = None;
+                            source.status = linuxfs_app::SourceStatus::Compatible;
                         }
                         state_for_timer
                             .lock()
