@@ -67,20 +67,32 @@ pub fn discover_physical_partitions(max_index: u32) -> Vec<PhysicalPartitionInfo
 pub fn discover_physical_partitions_checked(max_index: u32) -> Result<Vec<PhysicalPartitionInfo>> {
     let mut opened = 0_u32;
     let mut results = Vec::new();
+    let mut failures = Vec::new();
     (0..max_index).for_each(|index| {
         let Ok(reader) = PhysicalDiskReader::open(index) else {
             return;
         };
         opened = opened.saturating_add(1);
         let reader = Arc::new(reader) as Arc<dyn BlockReader>;
-        if let Ok(mut partitions) = probe_physical_partitions(index, reader) {
-            results.append(&mut partitions);
+        match probe_physical_partitions(index, reader) {
+            Ok(partitions) if partitions.is_empty() => {
+                failures.push(format!("PhysicalDrive{index}: no supported Ext partition"));
+            }
+            Ok(mut partitions) => results.append(&mut partitions),
+            Err(error) => failures.push(format!("PhysicalDrive{index}: {error}")),
         }
     });
     if opened == 0 {
         return Err(Error::new(
             ErrorCategory::StorageAccess,
             "no physical disks could be opened read-only; run as administrator if Windows denies raw-disk access",
+        ));
+    }
+    if results.is_empty() {
+        let detail = failures.join("; ");
+        return Err(Error::new(
+            ErrorCategory::UnsupportedFilesystem,
+            format!("no supported Ext partition found ({detail})"),
         ));
     }
     Ok(results)

@@ -528,6 +528,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     CompletedOperation::Refresh(Err(error)) => {
+                        window.set_source_name("Physical scan failed".into());
+                        window.set_source_details(error.clone().into());
+                        window.set_can_mount(false);
+                        window.set_can_unmount(false);
+                        window.set_selected_source(-1);
                         window.set_status(format!("Physical refresh failed: {error}").into());
                     }
                     CompletedOperation::Mount(Ok(point)) => {
