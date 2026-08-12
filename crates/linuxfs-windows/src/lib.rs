@@ -38,6 +38,7 @@ pub fn probe_physical_partitions(
     };
 
     let mut results = Vec::new();
+    let mut partition_failures = Vec::new();
     for partition in partitions {
         let view = match PartitionReader::new(
             Arc::clone(&reader),
@@ -45,17 +46,32 @@ pub fn probe_physical_partitions(
             partition.byte_length,
         ) {
             Ok(view) => Arc::new(view) as Arc<dyn BlockReader>,
-            Err(_) => continue,
+            Err(error) => {
+                partition_failures.push(format!("partition {}: {error}", partition.number));
+                continue;
+            }
         };
         let backend = match linuxfs_ext::ExtReadOnlyBackend::open(view) {
             Ok(backend) => backend,
-            Err(_) => continue,
+            Err(error) => {
+                partition_failures.push(format!("partition {}: {error}", partition.number));
+                continue;
+            }
         };
         results.push(PhysicalPartitionInfo {
             disk_index,
             partition,
             filesystem: backend.info()?,
         });
+    }
+    if results.is_empty() && !partition_failures.is_empty() {
+        return Err(Error::new(
+            ErrorCategory::UnsupportedFilesystem,
+            format!(
+                "no supported Ext partition; {}",
+                partition_failures.join("; ")
+            ),
+        ));
     }
     Ok(results)
 }
