@@ -16,6 +16,7 @@ linuxfs-winfsp = { path = "../linuxfs-winfsp" }
 slint = "1.13"
 
 [target.'cfg(windows)'.dependencies]
+rfd = "0.15"
 winfsp = "0.13"
 
 [lints]

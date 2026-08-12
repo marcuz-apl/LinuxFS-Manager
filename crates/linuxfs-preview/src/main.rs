@@ -266,12 +266,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state_for_open = Arc::clone(&state);
     let start_probe_for_open = start_probe.clone();
     window.on_open_image_clicked(move || {
-        let path = state_for_open
-            .lock()
-            .expect("UI state lock")
-            .image_path
-            .clone();
-        start_probe_for_open(path);
+        let dialog = rfd::FileDialog::new()
+            .set_title("Open Linux filesystem image")
+            .add_filter("Disk images", &["img", "raw", "dd", "iso", "bin"])
+            .add_filter("All files", &["*"]);
+        if let Some(path) = dialog.pick_file() {
+            let path = path.to_string_lossy().into_owned();
+            if let Ok(mut state) = state_for_open.lock() {
+                state.image_path = path.clone();
+            }
+            start_probe_for_open(path);
+        }
     });
     let source_rows = Arc::clone(&sources_for_ui);
     let current_source_for_selection = Arc::clone(&current_source);
