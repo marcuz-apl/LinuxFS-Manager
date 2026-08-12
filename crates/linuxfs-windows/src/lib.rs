@@ -22,6 +22,7 @@ pub struct PhysicalDiskReader {
 #[derive(Debug, Clone)]
 pub struct PhysicalPartitionInfo {
     pub disk_index: u32,
+    pub source_path: PathBuf,
     pub partition: Partition,
     pub filesystem: FilesystemInfo,
 }
@@ -60,6 +61,7 @@ pub fn probe_physical_partitions(
         };
         results.push(PhysicalPartitionInfo {
             disk_index,
+            source_path: physical_disk_path(disk_index),
             partition,
             filesystem: backend.info()?,
         });
@@ -74,6 +76,32 @@ pub fn probe_physical_partitions(
         ));
     }
     Ok(results)
+}
+
+/// Probes drive-letter volume devices as a fallback for Windows configurations
+/// where raw-disk partition enumeration does not expose Linux partitions.
+pub fn discover_volume_partitions() -> Vec<PhysicalPartitionInfo> {
+    (b'A'..=b'Z')
+        .filter_map(|letter| {
+            let path = PathBuf::from(format!(r"\\.\{}:", char::from(letter)));
+            let file = open_physical_disk(&path).ok()?;
+            let size_bytes = physical_disk_size(&file).ok()?;
+            let reader = Arc::new(PhysicalDiskReader { file, size_bytes }) as Arc<dyn BlockReader>;
+            let backend = linuxfs_ext::ExtReadOnlyBackend::open(reader).ok()?;
+            Some(PhysicalPartitionInfo {
+                disk_index: u32::MAX,
+                source_path: path,
+                partition: Partition {
+                    number: u32::from(letter),
+                    byte_offset: 0,
+                    byte_length: size_bytes,
+                    type_identifier: linuxfs_core::PartitionType::Mbr(0x83),
+                    unique_identifier: None,
+                },
+                filesystem: backend.info().ok()?,
+            })
+        })
+        .collect()
 }
 
 pub fn discover_physical_partitions(max_index: u32) -> Vec<PhysicalPartitionInfo> {

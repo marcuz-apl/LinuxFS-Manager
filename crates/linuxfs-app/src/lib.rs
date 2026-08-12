@@ -551,25 +551,35 @@ impl WindowsSourceProvider {
 #[cfg(windows)]
 impl SourceProvider for WindowsSourceProvider {
     fn refresh(&mut self) -> linuxfs_core::Result<Vec<SourceViewModel>> {
-        Ok(linuxfs_windows::discover_physical_partitions_checked(32)?
+        let mut physical =
+            linuxfs_windows::discover_physical_partitions_checked(32).unwrap_or_default();
+        physical.extend(linuxfs_windows::discover_volume_partitions());
+        if physical.is_empty() {
+            return Err(linuxfs_core::Error::new(
+                linuxfs_core::ErrorCategory::UnsupportedFilesystem,
+                "no supported Ext filesystem was found on physical disks or Windows volume devices",
+            ));
+        }
+        Ok(physical
             .into_iter()
             .map(|physical| {
                 let disk_index = physical.disk_index;
                 let partition = physical.partition;
-                let source_path = linuxfs_windows::physical_disk_path(disk_index);
+                let source_path = physical.source_path;
                 SourceViewModel {
                     id: SourceId(
                         (1_u64 << 63) | (u64::from(disk_index) << 32) | u64::from(partition.number),
                     ),
                     kind: SourceKind::PhysicalDisk,
-                    display_name: format!(
-                        "PhysicalDrive{} partition {}",
-                        disk_index, partition.number
-                    ),
+                    display_name: if disk_index == u32::MAX {
+                        format!("Windows volume {}", source_path.display())
+                    } else {
+                        format!("PhysicalDrive{} partition {}", disk_index, partition.number)
+                    },
                     source_description: source_path.to_string_lossy().into_owned(),
                     source_path: source_path.to_string_lossy().into_owned(),
                     partition_range: Some((partition.byte_offset, partition.byte_length)),
-                    physical_disk_index: Some(disk_index),
+                    physical_disk_index: (disk_index != u32::MAX).then_some(disk_index),
                     filesystem_type: Some(physical.filesystem.filesystem_type),
                     label: physical.filesystem.label,
                     uuid: physical
