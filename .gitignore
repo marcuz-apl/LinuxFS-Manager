@@ -1,3 +1,4 @@
 /target/
+/dist/
 
 /tests/fixtures-ext/generated/
