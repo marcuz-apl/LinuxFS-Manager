@@ -527,7 +527,9 @@ where
                 Ok(())
             }
             Err(error) => {
-                self.status = MountStatus::Failed;
+                // Keep ownership visible so callers can retry a teardown that
+                // may have failed while the host still owns its mount point.
+                self.status = MountStatus::Mounted;
                 Err(error)
             }
         }
@@ -645,7 +647,7 @@ mod lifecycle_tests {
     }
 
     #[test]
-    fn shutdown_reports_cleanup_failure_and_preserves_failed_state() {
+    fn shutdown_reports_cleanup_failure_and_preserves_mounted_state() {
         let mut manager = MountManager::new(FakeHost {
             fail_mount: false,
             fail_unmount: true,
@@ -657,8 +659,21 @@ mod lifecycle_tests {
             .shutdown()
             .expect_err("shutdown must report failure");
         assert_eq!(error.category(), ErrorCategory::WinFspFailure);
-        assert_eq!(manager.status(), MountStatus::Failed);
+        assert_eq!(manager.status(), MountStatus::Mounted);
         assert_eq!(manager.host.unmount_calls, 1);
+    }
+
+    #[test]
+    fn failed_unmount_retains_mounted_state_for_retry() {
+        let mut manager = MountManager::new(FakeHost {
+            fail_mount: false,
+            fail_unmount: true,
+            unmount_calls: 0,
+        });
+        manager.mount().expect("mount");
+
+        assert!(manager.unmount().is_err());
+        assert_eq!(manager.status(), MountStatus::Mounted);
     }
 
     #[test]

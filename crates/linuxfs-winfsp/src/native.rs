@@ -1,13 +1,20 @@
 //! Native WinFsp configuration and callback adapter.
 
-use std::ffi::c_void;
+use std::{
+    ffi::c_void,
+    io::Write,
+    sync::atomic::{AtomicU64, Ordering},
+    thread,
+    time::{Duration, Instant},
+};
 
 use linuxfs_core::{DirectoryEntry, FileKind, FsPath, NodeMetadata, ReadOnlyFilesystem};
+use windows_sys::Win32::Storage::FileSystem::GetLogicalDrives;
 use winfsp::{
     FspError, U16CStr,
     filesystem::{
-        DirBuffer, DirInfo, DirMarker, FileInfo, FileSecurity, FileSystemContext,
-        ModificationDescriptor, OpenFileInfo, VolumeInfo, WideNameInfo,
+        DirInfo, DirMarker, FileInfo, FileSecurity, FileSystemContext, ModificationDescriptor,
+        OpenFileInfo, VolumeInfo, WideNameInfo,
     },
     host::{FileSystemHost, VolumeParams},
 };
@@ -17,10 +24,77 @@ use crate::{MountHost, ReadOnlyDispatcher};
 
 const ERROR_ACCESS_DENIED: u32 = 5;
 const ERROR_FILE_NOT_FOUND: u32 = 2;
+const ERROR_NO_MORE_FILES: u32 = 18;
 const ERROR_INVALID_PARAMETER: u32 = 87;
 const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+const DRIVE_RELEASE_TIMEOUT: Duration = Duration::from_secs(2);
+static CALLBACK_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+fn drive_letter_mask(mount_point: &str) -> linuxfs_core::Result<u32> {
+    let mount_point = mount_point.strip_prefix(r"\\.\").unwrap_or(mount_point);
+    let bytes = mount_point.as_bytes();
+    if bytes.len() != 2 || !bytes[0].is_ascii_alphabetic() || bytes[1] != b':' {
+        return Err(linuxfs_core::Error::new(
+            linuxfs_core::ErrorCategory::MountPointUnavailable,
+            format!("invalid drive-letter mount point {mount_point:?}"),
+        ));
+    }
+    Ok(1_u32 << (bytes[0].to_ascii_uppercase() - b'A'))
+}
+
+fn drive_letter_is_present(mask: u32, mount_point: &str) -> bool {
+    drive_letter_mask(mount_point)
+        .map(|drive_mask| mask & drive_mask != 0)
+        .unwrap_or(false)
+}
+
+#[allow(unsafe_code)]
+fn logical_drives() -> u32 {
+    // SAFETY: GetLogicalDrives has no pointer arguments and returns the current
+    // process-wide logical-drive bit mask.
+    unsafe { GetLogicalDrives() }
+}
+
+fn wait_for_drive_release(mount_point: &str) -> linuxfs_core::Result<()> {
+    let deadline = Instant::now() + DRIVE_RELEASE_TIMEOUT;
+    loop {
+        if !drive_letter_is_present(logical_drives(), mount_point) {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(linuxfs_core::Error::new(
+                linuxfs_core::ErrorCategory::WinFspFailure,
+                format!("WinFsp did not release drive {mount_point} within 2 seconds"),
+            ));
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn callback_diagnostic(operation: &str, detail: &str) {
+    if std::env::var_os("LINUXFS_MOUNT_DIAGNOSTICS").is_none() {
+        return;
+    }
+    let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") else {
+        return;
+    };
+    let directory = std::path::PathBuf::from(local_app_data).join("LinuxFS Manager");
+    if std::fs::create_dir_all(&directory).is_err() {
+        return;
+    }
+    let path = directory.join("mount.log");
+    let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    else {
+        return;
+    };
+    let sequence = CALLBACK_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let _ = writeln!(file, "{sequence}: {operation}: {detail}");
+}
 
 pub fn read_only_volume_params(filesystem_name: &str) -> VolumeParams {
     let mut params = VolumeParams::new();
@@ -44,7 +118,6 @@ pub fn deny_mutation() -> winfsp::Result<()> {
 pub struct OpenHandle {
     pub(crate) path: FsPath,
     pub(crate) metadata: NodeMetadata,
-    pub(crate) directory_buffer: Option<DirBuffer>,
 }
 
 pub struct ReadOnlyContext<F> {
@@ -86,35 +159,12 @@ where
     }
 
     fn directory_entries(&self, path: &FsPath) -> linuxfs_core::Result<Vec<DirectoryEntry>> {
-        let mut entries = vec![
-            DirectoryEntry {
-                name: ".".to_owned(),
-                metadata: NodeMetadata {
-                    kind: FileKind::Directory,
-                    size: 0,
-                    permissions: 0,
-                    uid: 0,
-                    gid: 0,
-                },
-            },
-            DirectoryEntry {
-                name: "..".to_owned(),
-                metadata: NodeMetadata {
-                    kind: FileKind::Directory,
-                    size: 0,
-                    permissions: 0,
-                    uid: 0,
-                    gid: 0,
-                },
-            },
-        ];
-        entries.extend(
-            self.dispatcher
-                .read_dir(path)?
-                .into_iter()
-                .filter(|entry| entry.name != "." && entry.name != ".."),
-        );
-        Ok(entries)
+        Ok(self
+            .dispatcher
+            .read_dir(path)?
+            .into_iter()
+            .filter(|entry| entry.name != "." && entry.name != "..")
+            .collect())
     }
 }
 
@@ -130,8 +180,17 @@ where
         _security_descriptor: Option<&mut [c_void]>,
         _reparse_point_resolver: impl FnOnce(&U16CStr) -> Option<FileSecurity>,
     ) -> winfsp::Result<FileSecurity> {
+        callback_diagnostic("get_security.begin", "request received");
         let path = Self::path(file_name)?;
         let metadata = self.dispatcher.lookup(&path).map_err(map_error)?;
+        callback_diagnostic(
+            "get_security.end",
+            if metadata.kind == FileKind::Directory {
+                "directory"
+            } else {
+                "non-directory"
+            },
+        );
         Ok(FileSecurity {
             reparse: false,
             sz_security_descriptor: 0,
@@ -146,14 +205,19 @@ where
         _granted_access: FILE_ACCESS_RIGHTS,
         file_info: &mut OpenFileInfo,
     ) -> winfsp::Result<Self::FileContext> {
+        callback_diagnostic("open.begin", "request received");
         let path = Self::path(file_name)?;
         let metadata = self.dispatcher.lookup(&path).map_err(map_error)?;
         Self::fill_file_info(metadata, file_info.as_mut());
-        Ok(OpenHandle {
-            path,
-            metadata,
-            directory_buffer: (metadata.kind == FileKind::Directory).then(DirBuffer::new),
-        })
+        callback_diagnostic(
+            "open.end",
+            if metadata.kind == FileKind::Directory {
+                "directory"
+            } else {
+                "non-directory"
+            },
+        );
+        Ok(OpenHandle { path, metadata })
     }
 
     fn close(&self, _context: Self::FileContext) {}
@@ -173,10 +237,12 @@ where
         buffer: &mut [u8],
         offset: u64,
     ) -> winfsp::Result<u32> {
+        callback_diagnostic("read.begin", "request received");
         let count = self
             .dispatcher
             .read_file_at(&context.path, offset, buffer)
             .map_err(map_error)?;
+        callback_diagnostic("read.end", "request completed");
         u32::try_from(count).map_err(|_| FspError::WIN32(ERROR_INVALID_PARAMETER))
     }
 
@@ -187,21 +253,41 @@ where
         marker: DirMarker,
         buffer: &mut [u8],
     ) -> winfsp::Result<u32> {
-        let Some(directory_buffer) = context.directory_buffer.as_ref() else {
-            return Err(FspError::WIN32(ERROR_INVALID_PARAMETER));
-        };
-        if marker.is_none() {
-            let entries = self.directory_entries(&context.path).map_err(map_error)?;
-            let capacity_hint = u32::try_from(entries.len()).unwrap_or(u32::MAX);
-            let lock = directory_buffer.acquire(true, Some(capacity_hint))?;
-            for entry in entries {
-                let mut info = DirInfo::<255>::new();
-                info.set_name(&entry.name)?;
-                Self::fill_file_info(entry.metadata, info.file_info_mut());
-                lock.write(&mut info)?;
+        let marker_detail = marker
+            .inner_as_cstr()
+            .map(|value| value.to_string_lossy())
+            .unwrap_or_else(|| "<none>".to_owned());
+        callback_diagnostic("read_directory.begin", &format!("marker={marker_detail}"));
+        let marker = marker.inner().map(String::from_utf16_lossy);
+        let mut entries = self.directory_entries(&context.path).map_err(map_error)?;
+        entries.sort_by_cached_key(|entry| entry.name.encode_utf16().collect::<Vec<_>>());
+        callback_diagnostic(
+            "read_directory.entries",
+            &format!("count={}", entries.len()),
+        );
+
+        let mut cursor = 0_u32;
+        for entry in entries {
+            if marker.as_deref().is_some_and(|marker| {
+                entry.name.encode_utf16().collect::<Vec<_>>()
+                    <= marker.encode_utf16().collect::<Vec<_>>()
+            }) {
+                continue;
+            }
+            let mut info = DirInfo::<255>::new();
+            info.set_name(&entry.name)?;
+            Self::fill_file_info(entry.metadata, info.file_info_mut());
+            if !info.append_to_buffer(buffer, &mut cursor) {
+                break;
             }
         }
-        Ok(directory_buffer.read(marker, buffer))
+        let _ = DirInfo::<255>::finalize_buffer(buffer, &mut cursor);
+        let count = cursor;
+        callback_diagnostic("read_directory.end", &format!("bytes={count}"));
+        if count == 0 {
+            return Err(FspError::WIN32(ERROR_NO_MORE_FILES));
+        }
+        Ok(count)
     }
 
     fn get_volume_info(&self, out_volume_info: &mut VolumeInfo) -> winfsp::Result<()> {
@@ -364,6 +450,12 @@ where
                 "WinFsp host is already started",
             ));
         }
+        if drive_letter_is_present(logical_drives(), &self.mount_point) {
+            return Err(linuxfs_core::Error::new(
+                linuxfs_core::ErrorCategory::MountPointUnavailable,
+                format!("drive {} is already in use", self.mount_point),
+            ));
+        }
         self.host
             .start()
             .map_err(|error| map_host_error(error.into()))?;
@@ -385,6 +477,7 @@ where
         }
         self.host.unmount();
         self.host.stop();
+        wait_for_drive_release(&self.mount_point)?;
         self.started = false;
         Ok(())
     }
@@ -468,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    fn directory_listing_adds_windows_navigation_entries() {
+    fn directory_listing_uses_filesystem_navigation_entries() {
         let context = ReadOnlyContext::new(FakeFilesystem);
         let entries = context
             .directory_entries(&FsPath::root())
@@ -478,7 +571,7 @@ mod tests {
                 .iter()
                 .map(|entry| entry.name.as_str())
                 .collect::<Vec<_>>(),
-            vec![".", "..", "hello.txt"]
+            vec!["hello.txt"]
         );
     }
 
@@ -486,5 +579,25 @@ mod tests {
     fn native_configuration_is_constructible() {
         let _params = read_only_volume_params("LinuxFS Manager");
         assert!(deny_mutation().is_err());
+    }
+
+    #[test]
+    fn drive_letter_helpers_validate_and_match_masks() {
+        assert_eq!(
+            drive_letter_mask("L:").expect("valid drive letter"),
+            1 << 11
+        );
+        assert_eq!(
+            drive_letter_mask(r"\\.\L:").expect("global drive letter"),
+            1 << 11
+        );
+        assert_eq!(
+            drive_letter_mask("l:").expect("valid drive letter"),
+            1 << 11
+        );
+        assert!(drive_letter_mask("L:\\").is_err());
+        assert!(drive_letter_mask("volume").is_err());
+        assert!(drive_letter_is_present(1 << 11, "L:"));
+        assert!(!drive_letter_is_present(1 << 10, "L:"));
     }
 }

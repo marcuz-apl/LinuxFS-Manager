@@ -1,6 +1,24 @@
 use linuxfs_core::FileKind;
 
+#[cfg(windows)]
+use std::path::PathBuf;
+
 pub mod runtime;
+
+#[cfg(windows)]
+pub fn write_physical_scan_log(report: &str) -> linuxfs_core::Result<PathBuf> {
+    let local_app_data = std::env::var_os("LOCALAPPDATA").ok_or_else(|| {
+        linuxfs_core::Error::new(
+            linuxfs_core::ErrorCategory::Configuration,
+            "LOCALAPPDATA is unavailable; physical scan log was not written",
+        )
+    })?;
+    let path = PathBuf::from(local_app_data)
+        .join("LinuxFS Manager")
+        .join("scan.log");
+    linuxfs_config::write_text_atomic(&path, report)?;
+    Ok(path)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SourceId(pub u64);
@@ -49,6 +67,27 @@ impl SourceViewModel {
     pub fn can_unmount(&self) -> bool {
         matches!(self.status, SourceStatus::Mounted) && self.mount_point.is_some()
     }
+}
+
+pub fn apply_source_mount_state(
+    sources: &mut [SourceViewModel],
+    current: &mut Option<SourceViewModel>,
+    source_id: SourceId,
+    status: SourceStatus,
+    mount_point: Option<String>,
+) -> bool {
+    let Some(source) = sources.iter_mut().find(|source| source.id == source_id) else {
+        return false;
+    };
+    source.status = status;
+    source.mount_point = mount_point;
+    if current
+        .as_ref()
+        .is_some_and(|current| current.id == source_id)
+    {
+        *current = Some(source.clone());
+    }
+    true
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -378,6 +417,71 @@ mod controller_tests {
     }
 
     #[test]
+    fn apply_source_mount_state_updates_selected_and_list_sources() {
+        let mut sources = vec![
+            test_source(),
+            SourceViewModel {
+                id: SourceId(8),
+                ..test_source()
+            },
+        ];
+        let mut current = Some(sources[0].clone());
+
+        assert!(apply_source_mount_state(
+            &mut sources,
+            &mut current,
+            SourceId(7),
+            SourceStatus::Mounted,
+            Some("L:".to_owned()),
+        ));
+
+        assert!(!sources[0].can_mount());
+        assert!(sources[0].can_unmount());
+        assert_eq!(sources[0].mount_point.as_deref(), Some("L:"));
+        assert_eq!(current.as_ref(), Some(&sources[0]));
+    }
+
+    #[test]
+    fn apply_source_mount_state_clears_mount_on_unmount() {
+        let mut source = test_source();
+        source.status = SourceStatus::Mounted;
+        source.mount_point = Some("L:".to_owned());
+        let mut sources = vec![source.clone()];
+        let mut current = Some(source);
+
+        assert!(apply_source_mount_state(
+            &mut sources,
+            &mut current,
+            SourceId(7),
+            SourceStatus::Compatible,
+            None,
+        ));
+
+        assert!(sources[0].can_mount());
+        assert!(!sources[0].can_unmount());
+        assert_eq!(current.as_ref(), Some(&sources[0]));
+    }
+
+    #[test]
+    fn apply_source_mount_state_rejects_unknown_source() {
+        let mut sources = vec![test_source()];
+        let before_sources = sources.clone();
+        let mut current = Some(sources[0].clone());
+        let before_current = current.clone();
+
+        assert!(!apply_source_mount_state(
+            &mut sources,
+            &mut current,
+            SourceId(99),
+            SourceStatus::Mounted,
+            Some("L:".to_owned()),
+        ));
+
+        assert_eq!(sources, before_sources);
+        assert_eq!(current, before_current);
+    }
+
+    #[test]
     fn controller_routes_refresh_mount_and_unmount() {
         let mut controller = AppController::new(FakeProvider, FakeMount);
         controller.refresh().expect("refresh");
@@ -551,8 +655,7 @@ impl WindowsSourceProvider {
 #[cfg(windows)]
 impl SourceProvider for WindowsSourceProvider {
     fn refresh(&mut self) -> linuxfs_core::Result<Vec<SourceViewModel>> {
-        let mut physical =
-            linuxfs_windows::discover_physical_partitions_checked(32).unwrap_or_default();
+        let mut physical = linuxfs_windows::discover_physical_partitions_checked(32)?;
         physical.extend(linuxfs_windows::discover_volume_partitions());
         if physical.is_empty() {
             return Err(linuxfs_core::Error::new(
@@ -738,14 +841,16 @@ impl MountService for WindowsImageMountService {
             None => image_reader,
         };
         let backend = ExtReadOnlyBackend::open(reader)?;
-        let host = NativeMountHost::new(backend, "LinuxFS Manager", self.mount_point.clone())
-            .map_err(|error| {
+        let global_mount_point = format!(r"\\.\{}", self.mount_point);
+        let host = NativeMountHost::new(backend, "LinuxFS Manager", global_mount_point).map_err(
+            |error| {
                 linuxfs_core::Error::with_source(
                     linuxfs_core::ErrorCategory::WinFspFailure,
                     "cannot create WinFsp host",
                     error,
                 )
-            })?;
+            },
+        )?;
         let mut manager = MountManager::new(host);
         manager.mount()?;
         self.mounts.insert(source.id, manager);
@@ -753,16 +858,14 @@ impl MountService for WindowsImageMountService {
     }
 
     fn unmount(&mut self, source: &SourceViewModel) -> linuxfs_core::Result<()> {
-        let Some(mut manager) = self.mounts.remove(&source.id) else {
+        let Some(manager) = self.mounts.get_mut(&source.id) else {
             return Err(linuxfs_core::Error::new(
                 linuxfs_core::ErrorCategory::WinFspFailure,
                 "source is not owned by this application",
             ));
         };
-        if let Err(error) = manager.unmount() {
-            self.mounts.insert(source.id, manager);
-            return Err(error);
-        }
+        manager.unmount()?;
+        self.mounts.remove(&source.id);
         Ok(())
     }
 

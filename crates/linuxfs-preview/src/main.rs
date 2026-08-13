@@ -1,3 +1,5 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 slint::slint! {
     import { Button, VerticalBox, HorizontalBox, GroupBox, LineEdit, ListView } from "std-widgets.slint";
 
@@ -129,6 +131,17 @@ impl UiState {
         self.can_unmount = false;
     }
 
+    fn set_source(&mut self, source: &linuxfs_app::SourceViewModel) {
+        let filesystem = source.filesystem_type.as_deref().unwrap_or("Unknown");
+        self.source_name = source.display_name.clone();
+        self.source_details = format!(
+            "{filesystem} · {} · Read-only source",
+            source.source_description
+        );
+        self.can_mount = source.can_mount();
+        self.can_unmount = source.can_unmount();
+    }
+
     fn set_mounted(&mut self, point: &str) {
         self.status = format!("Mounted read-only on {point} — source unchanged");
         self.can_mount = false;
@@ -163,15 +176,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     enum PendingOperation {
         Probe(BackgroundOperation<SourceViewModel>, String),
         Refresh(BackgroundOperation<Vec<SourceViewModel>>),
-        Mount(BackgroundOperation<String>),
-        Unmount(BackgroundOperation<()>),
+        Mount(BackgroundOperation<String>, linuxfs_app::SourceId),
+        Unmount(BackgroundOperation<()>, linuxfs_app::SourceId),
     }
     #[allow(clippy::large_enum_variant)]
     enum CompletedOperation {
         Probe(Result<(SourceViewModel, String), String>),
         Refresh(Result<Vec<SourceViewModel>, String>),
-        Mount(Result<String, String>),
-        Unmount(Result<(), String>),
+        Mount(Result<(linuxfs_app::SourceId, String), String>),
+        Unmount(Result<linuxfs_app::SourceId, String>),
     }
 
     let config = load_config().unwrap_or_default();
@@ -297,13 +310,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let Some(source) = source else {
             return;
         };
-        let filesystem = source
-            .filesystem_type
-            .clone()
-            .unwrap_or_else(|| "Unknown".to_owned());
+        if let Some(window) = weak.upgrade() {
+            window.set_selected_source(index);
+        }
         if let Ok(mut ui) = state_for_selection.lock() {
-            ui.source_name = source.display_name.clone();
-            ui.set_compatible(&filesystem, &source.source_description);
+            ui.set_source(&source);
             if let Some(window) = weak.upgrade() {
                 window.set_source_name(ui.source_name.clone().into());
                 window.set_source_details(ui.source_details.clone().into());
@@ -327,6 +338,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .as_ref()
             .cloned()
             .ok_or_else(|| "no source loaded".to_owned());
+        let source_id = match &source {
+            Ok(source) => source.id,
+            Err(_) => linuxfs_app::SourceId(0),
+        };
         let service_for_operation = Arc::clone(&service_for_mount);
         let operation = match source {
             Ok(source) => spawn_background(move || {
@@ -343,9 +358,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
         *pending_for_mount.lock().expect("pending operation lock") =
-            Some(PendingOperation::Mount(operation));
+            Some(PendingOperation::Mount(operation, source_id));
         if let Some(window) = weak.upgrade() {
             window.set_status("Mounting read-only…".into());
+            window.set_can_mount(false);
+            window.set_can_unmount(false);
         }
     });
     let weak = window.as_weak();
@@ -359,6 +376,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .as_ref()
             .cloned()
             .ok_or_else(|| "no source loaded".to_owned());
+        let source_id = match &source {
+            Ok(source) => source.id,
+            Err(_) => linuxfs_app::SourceId(0),
+        };
         let service_for_operation = Arc::clone(&service_for_unmount);
         let operation = match source {
             Ok(source) => spawn_background(move || {
@@ -375,9 +396,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
         *pending_for_unmount.lock().expect("pending operation lock") =
-            Some(PendingOperation::Unmount(operation));
+            Some(PendingOperation::Unmount(operation, source_id));
         if let Some(window) = weak.upgrade() {
             window.set_status("Unmounting…".into());
+            window.set_can_mount(false);
+            window.set_can_unmount(false);
         }
     });
     let weak = window.as_weak();
@@ -454,11 +477,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 PendingOperation::Refresh(operation) => operation.try_receive().map(|result| {
                     CompletedOperation::Refresh(result.map_err(|error| error.to_string()))
                 }),
-                PendingOperation::Mount(operation) => operation.try_receive().map(|result| {
-                    CompletedOperation::Mount(result.map_err(|error| error.to_string()))
+                PendingOperation::Mount(operation, source_id) => operation.try_receive().map(|result| {
+                    CompletedOperation::Mount(
+                        result
+                            .map(|point| (*source_id, point))
+                            .map_err(|error| error.to_string()),
+                    )
                 }),
-                PendingOperation::Unmount(operation) => operation.try_receive().map(|result| {
-                    CompletedOperation::Unmount(result.map_err(|error| error.to_string()))
+                PendingOperation::Unmount(operation, source_id) => operation.try_receive().map(|result| {
+                    CompletedOperation::Unmount(
+                        result.map(|()| *source_id).map_err(|error| error.to_string()),
+                    )
                 }),
             };
             if completed.is_none() {
@@ -495,14 +524,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             window.set_source_names(source_items(&rows));
                         }
                         if let Some(source) = sources.first().cloned() {
-                            let filesystem = source
-                                .filesystem_type
-                                .clone()
-                                .unwrap_or_else(|| "Unknown".to_owned());
                             let mut ui = state_for_timer.lock().expect("UI state lock");
                             ui.image_path.clear();
-                            ui.source_name = source.display_name.clone();
-                            ui.set_compatible(&filesystem, &source.source_description);
+                            ui.set_source(&source);
                             window.set_image_path("".into());
                             window.set_source_name(ui.source_name.clone().into());
                             window.set_source_details(ui.source_details.clone().into());
@@ -528,6 +552,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     CompletedOperation::Refresh(Err(error)) => {
+                        let _ = linuxfs_app::write_physical_scan_log(&error.to_string());
                         window.set_source_name("Physical scan failed".into());
                         window.set_source_details(error.clone().into());
                         window.set_can_mount(false);
@@ -535,12 +560,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         window.set_selected_source(-1);
                         window.set_status(format!("Physical refresh failed: {error}").into());
                     }
-                    CompletedOperation::Mount(Ok(point)) => {
-                        if let Ok(mut source) = source_for_timer.lock()
-                            && let Some(source) = source.as_mut()
+                    CompletedOperation::Mount(Ok((source_id, point))) => {
+                        if let (Ok(mut sources), Ok(mut current)) =
+                            (sources_for_timer.lock(), source_for_timer.lock())
                         {
-                            source.mount_point = Some(point.clone());
-                            source.status = linuxfs_app::SourceStatus::Mounted;
+                            let _ = linuxfs_app::apply_source_mount_state(
+                                &mut sources,
+                                &mut current,
+                                source_id,
+                                linuxfs_app::SourceStatus::Mounted,
+                                Some(point.clone()),
+                            );
                         }
                         state_for_timer
                             .lock()
@@ -552,12 +582,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         window.set_can_mount(false);
                         window.set_can_unmount(true);
                     }
-                    CompletedOperation::Unmount(Ok(())) => {
-                        if let Ok(mut source) = source_for_timer.lock()
-                            && let Some(source) = source.as_mut()
+                    CompletedOperation::Unmount(Ok(source_id)) => {
+                        if let (Ok(mut sources), Ok(mut current)) =
+                            (sources_for_timer.lock(), source_for_timer.lock())
                         {
-                            source.mount_point = None;
-                            source.status = linuxfs_app::SourceStatus::Compatible;
+                            let _ = linuxfs_app::apply_source_mount_state(
+                                &mut sources,
+                                &mut current,
+                                source_id,
+                                linuxfs_app::SourceStatus::Compatible,
+                                None,
+                            );
                         }
                         state_for_timer
                             .lock()
@@ -581,9 +616,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         *source_for_timer.lock().expect("source lock") = None;
                     }
                     CompletedOperation::Mount(Err(error)) => {
+                        let capabilities = source_for_timer
+                            .lock()
+                            .ok()
+                            .and_then(|source| source.as_ref().map(|source| (source.can_mount(), source.can_unmount())));
+                        if let Some((can_mount, can_unmount)) = capabilities {
+                            window.set_can_mount(can_mount);
+                            window.set_can_unmount(can_unmount);
+                        }
                         window.set_status(format!("Mount failed: {error}").into())
                     }
                     CompletedOperation::Unmount(Err(error)) => {
+                        window.set_can_mount(false);
+                        window.set_can_unmount(true);
                         window.set_status(format!("Unmount failed: {error}").into())
                     }
                 }
@@ -614,6 +659,32 @@ mod tests {
         state.set_unmounted();
         assert!(state.can_mount);
         assert!(!state.can_unmount);
+    }
+
+    #[test]
+    fn ui_state_selection_preserves_mounted_source_capabilities() {
+        let source = linuxfs_app::SourceViewModel {
+            id: linuxfs_app::SourceId(1),
+            kind: linuxfs_app::SourceKind::Image,
+            display_name: "fixture.img".to_owned(),
+            source_description: "Raw image".to_owned(),
+            source_path: "fixture.img".to_owned(),
+            partition_range: None,
+            physical_disk_index: None,
+            filesystem_type: Some("ext4".to_owned()),
+            label: None,
+            uuid: None,
+            size_bytes: None,
+            status: linuxfs_app::SourceStatus::Mounted,
+            mount_point: Some("L:".to_owned()),
+            read_only: true,
+        };
+        let mut state = UiState::new("");
+
+        state.set_source(&source);
+
+        assert!(!state.can_mount);
+        assert!(state.can_unmount);
     }
 
     #[test]

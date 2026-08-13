@@ -87,6 +87,22 @@ impl ConfigStore {
         Ok(())
     }
 }
+
+/// Writes diagnostic text through the same atomic replacement path as config.
+pub fn write_text_atomic(path: impl AsRef<Path>, text: &str) -> Result<()> {
+    let path = path.as_ref();
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)
+        .map_err(|e| config_error("cannot create diagnostic directory", e))?;
+    let temporary = path.with_extension("log.tmp");
+    fs::write(&temporary, text).map_err(|e| config_error("cannot write diagnostics", e))?;
+    if let Err(error) = replace_file(&temporary, path) {
+        let _ = fs::remove_file(&temporary);
+        return Err(config_error("cannot atomically replace diagnostics", error));
+    }
+    Ok(())
+}
+
 #[allow(unsafe_code)]
 fn replace_file(temporary: &Path, destination: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
@@ -173,6 +189,18 @@ mod tests {
         assert_eq!(
             store.load().expect_err("version").category(),
             ErrorCategory::Configuration
+        );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn atomic_text_write_replaces_existing_file() {
+        let path = temp_path();
+        fs::write(&path, "old").expect("seed file");
+        write_text_atomic(&path, "new diagnostics").expect("atomic text write");
+        assert_eq!(
+            fs::read_to_string(&path).expect("read file"),
+            "new diagnostics"
         );
         let _ = fs::remove_file(path);
     }
