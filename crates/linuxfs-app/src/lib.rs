@@ -96,6 +96,11 @@ pub fn reconcile_sources_preserving_mount_state(
     mut refreshed: Vec<SourceViewModel>,
 ) -> Vec<SourceViewModel> {
     for mounted in existing.iter().filter(|source| source.can_unmount()) {
+        if matches!(mounted.kind, SourceKind::PhysicalDisk) {
+            refreshed.retain(|source| source.id != mounted.id);
+            refreshed.push(mounted.clone());
+            continue;
+        }
         if let Some(source) = refreshed
             .iter_mut()
             .find(|source| source_identity_matches(mounted, source))
@@ -323,6 +328,30 @@ mod tests {
         assert_eq!(sources.len(), 1);
         assert!(sources[0].can_unmount());
         assert_eq!(sources[0].uuid.as_deref(), Some("old-filesystem"));
+    }
+
+    #[test]
+    fn physical_refresh_never_rebinds_an_owned_mount_to_a_fresh_disk_row() {
+        let mut mounted = compatible_source();
+        mounted.id = SourceId(3);
+        mounted.kind = SourceKind::PhysicalDisk;
+        mounted.physical_disk_index = Some(3);
+        mounted.display_name = "original mounted partition".to_owned();
+        mounted.uuid = Some("same-filesystem-uuid".to_owned());
+        mounted.status = SourceStatus::Mounted;
+        mounted.mount_point = Some("L:".to_owned());
+        let refreshed = vec![SourceViewModel {
+            display_name: "freshly scanned partition".to_owned(),
+            status: SourceStatus::Compatible,
+            mount_point: None,
+            ..mounted.clone()
+        }];
+
+        let sources = reconcile_sources_preserving_mount_state(&[mounted], refreshed);
+
+        assert_eq!(sources.len(), 1);
+        assert!(sources[0].can_unmount());
+        assert_eq!(sources[0].display_name, "original mounted partition");
     }
 
     #[test]

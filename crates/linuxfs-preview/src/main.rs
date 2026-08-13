@@ -1168,17 +1168,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         window.set_can_unmount(false);
                     }
                     CompletedOperation::Probe(Err(error)) => {
-                        window.set_status(format!("Refresh failed: {error}").into());
-                        window.set_source_name("No compatible source".into());
-                        window.set_source_details("The image could not be opened safely.".into());
-                        window.set_can_mount(false);
-                        window.set_can_unmount(false);
-                        window.set_selected_source(-1);
-                        if let Ok(mut rows) = sources_for_timer.lock() {
-                            rows.clear();
+                        let mounted_source = if let Ok(mut rows) = sources_for_timer.lock() {
+                            *rows = linuxfs_app::reconcile_sources_preserving_mount_state(
+                                &rows,
+                                Vec::new(),
+                            );
                             window.set_source_names(source_items(&rows));
+                            rows.iter().enumerate().find_map(|(index, source)| {
+                                source.can_unmount().then(|| (index, source.clone()))
+                            })
+                        } else {
+                            None
+                        };
+                        if let Some((index, source)) = mounted_source {
+                            let mut ui = state_for_timer.lock().expect("UI state lock");
+                            ui.set_source(&source);
+                            window.set_source_name(ui.source_name.clone().into());
+                            window.set_source_details(ui.source_details.clone().into());
+                            window.set_can_mount(ui.can_mount);
+                            window.set_can_unmount(ui.can_unmount);
+                            window.set_selected_source(i32::try_from(index).unwrap_or(-1));
+                            *source_for_timer.lock().expect("source lock") = Some(source);
+                            window.set_status(
+                                format!(
+                                    "Image open failed: {error}; the existing mount remains available to unmount"
+                                )
+                                .into(),
+                            );
+                        } else {
+                            window.set_status(format!("Refresh failed: {error}").into());
+                            window.set_source_name("No compatible source".into());
+                            window.set_source_details(
+                                "The image could not be opened safely.".into(),
+                            );
+                            window.set_can_mount(false);
+                            window.set_can_unmount(false);
+                            window.set_selected_source(-1);
+                            *source_for_timer.lock().expect("source lock") = None;
                         }
-                        *source_for_timer.lock().expect("source lock") = None;
                     }
                     CompletedOperation::Mount(Err(error)) => {
                         let capabilities = source_for_timer

@@ -23,7 +23,9 @@ Opening an image or refreshing physical discovery no longer discards a source th
 
 The mount service now permits multiple concurrently mounted read-only sources. When Windows reports the preferred letter as occupied, the existing free-letter selector chooses the highest free letter instead. This applies equally when another LinuxFS Manager mount owns the original preferred drive letter.
 
-Mount and unmount lifecycle work is serialized until each background operation has updated the source row, preventing an owned mount from being orphaned by rapid source changes. Duplicate views of the same image/partition are rejected, and a physical refresh only carries a mount forward when the filesystem identity still matches.
+Mount and unmount lifecycle work is serialized until each background operation has updated the source row, preventing an owned mount from being orphaned by rapid source changes. Duplicate views of the same image/partition are rejected, and a physical refresh retains its original mounted row instead of transferring ownership to a fresh scan result.
+
+If an image probe fails, any existing mount remains in the source list and is selected for unmount. Physical-disk rescans retain the original mounted row until teardown completes instead of assigning its mount ownership to a newly scanned physical-device row.
 
 ## 2026-08-13 — push and filesystem backend extension
 
