@@ -100,12 +100,6 @@ Build a verified portable package with:
 
 See [docs/packaging.md](docs/packaging.md) for the prerequisite and redistribution contract.
 
-## License
-
-Copyright © 2026 Alfazen Inc. LinuxFS Manager is free software licensed under
-the [GNU General Public License, version 3 or later](LICENSE). Source and
-binary recipients may copy, modify, and redistribute it under those terms.
-
 ## Development checks
 
 ```powershell
@@ -127,3 +121,7 @@ The elevated preview executable may require an Administrator shell to execute it
 - [Current handoff](HANDOFF.md)
 
 The current version is tracked in [`VERSION`](VERSION), and the repository hooks apply the project’s bounded `m.n.p` versioning rules to commits.
+
+## License
+
+Copyright © 2026 Alfazen Inc. LinuxFS Manager is free software licensed under the [GNU General Public License, version 3 or later](LICENSE). Source and binary recipients may copy, modify, and redistribute it under those terms.
