@@ -96,15 +96,49 @@ pub fn reconcile_sources_preserving_mount_state(
     mut refreshed: Vec<SourceViewModel>,
 ) -> Vec<SourceViewModel> {
     for mounted in existing.iter().filter(|source| source.can_unmount()) {
-        if let Some(source) = refreshed.iter_mut().find(|source| source.id == mounted.id) {
+        if let Some(source) = refreshed
+            .iter_mut()
+            .find(|source| source_identity_matches(mounted, source))
+        {
             source.status = SourceStatus::Mounted;
             source.mount_point = mounted.mount_point.clone();
             source.read_only = true;
         } else {
+            refreshed.retain(|source| source.id != mounted.id);
             refreshed.push(mounted.clone());
         }
     }
     refreshed
+}
+
+fn source_identity_matches(left: &SourceViewModel, right: &SourceViewModel) -> bool {
+    if left.id != right.id
+        || left.kind != right.kind
+        || left.source_path != right.source_path
+        || left.partition_range != right.partition_range
+        || left.filesystem_type != right.filesystem_type
+        || left.size_bytes != right.size_bytes
+    {
+        return false;
+    }
+
+    if matches!(left.kind, SourceKind::PhysicalDisk) {
+        left.uuid.is_some() && left.uuid == right.uuid
+    } else {
+        left.uuid == right.uuid
+    }
+}
+
+fn source_mount_identity(source: &SourceViewModel) -> String {
+    let path = std::fs::canonicalize(&source.source_path)
+        .unwrap_or_else(|_| std::path::PathBuf::from(&source.source_path))
+        .to_string_lossy()
+        .into_owned();
+    let partition = source
+        .partition_range
+        .map(|(offset, length)| format!("{offset}:{length}"))
+        .unwrap_or_else(|| "whole-source".to_owned());
+    format!("{path}|{partition}")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -267,6 +301,43 @@ mod tests {
                 .any(|source| source.id == SourceId(3) && source.can_unmount())
         );
     }
+
+    #[test]
+    fn physical_refresh_with_a_different_filesystem_identity_keeps_the_owned_mount() {
+        let mut mounted = compatible_source();
+        mounted.id = SourceId(3);
+        mounted.kind = SourceKind::PhysicalDisk;
+        mounted.physical_disk_index = Some(3);
+        mounted.uuid = Some("old-filesystem".to_owned());
+        mounted.status = SourceStatus::Mounted;
+        mounted.mount_point = Some("L:".to_owned());
+        let refreshed = vec![SourceViewModel {
+            uuid: Some("new-filesystem".to_owned()),
+            status: SourceStatus::Compatible,
+            mount_point: None,
+            ..mounted.clone()
+        }];
+
+        let sources = reconcile_sources_preserving_mount_state(&[mounted], refreshed);
+
+        assert_eq!(sources.len(), 1);
+        assert!(sources[0].can_unmount());
+        assert_eq!(sources[0].uuid.as_deref(), Some("old-filesystem"));
+    }
+
+    #[test]
+    fn duplicate_image_entries_share_a_mount_identity() {
+        let first = compatible_source();
+        let second = SourceViewModel {
+            id: SourceId(2),
+            ..first.clone()
+        };
+
+        assert_eq!(
+            source_mount_identity(&first),
+            source_mount_identity(&second)
+        );
+    }
 }
 
 pub trait SourceProvider {
@@ -314,6 +385,8 @@ where
         let result = self.provider.refresh();
         match result {
             Ok(sources) => {
+                let sources =
+                    reconcile_sources_preserving_mount_state(&self.model.sources, sources);
                 self.model.replace_sources(sources);
                 self.finish(Ok(()))
             }
@@ -547,6 +620,21 @@ mod controller_tests {
         assert!(controller.model().sources()[0].can_unmount());
         controller.unmount(SourceId(7)).expect("unmount");
         assert!(controller.model().sources()[0].can_mount());
+    }
+
+    #[test]
+    fn controller_refresh_keeps_a_mounted_source_available_for_unmount() {
+        let mut controller = AppController::new(FakeProvider, FakeMount);
+        controller.refresh().expect("refresh");
+        controller.mount(SourceId(7)).expect("mount");
+
+        controller.refresh().expect("refresh after mount");
+
+        assert!(controller.model().sources()[0].can_unmount());
+        assert_eq!(
+            controller.model().sources()[0].mount_point.as_deref(),
+            Some("L:")
+        );
     }
 
     #[test]
@@ -812,6 +900,7 @@ pub struct WindowsImageMountService {
             linuxfs_winfsp::native::NativeMountHost<linuxfs_backends::ReadOnlyBackend>,
         >,
     >,
+    mount_identities: std::collections::HashMap<SourceId, String>,
 }
 
 #[cfg(windows)]
@@ -820,6 +909,7 @@ impl WindowsImageMountService {
         Self {
             preferred_mount_point: mount_point.into(),
             mounts: std::collections::HashMap::new(),
+            mount_identities: std::collections::HashMap::new(),
         }
     }
 
@@ -867,6 +957,17 @@ impl MountService for WindowsImageMountService {
                 "source is already mounted",
             ));
         }
+        let source_identity = source_mount_identity(source);
+        if self
+            .mount_identities
+            .values()
+            .any(|mounted_identity| mounted_identity == &source_identity)
+        {
+            return Err(linuxfs_core::Error::new(
+                linuxfs_core::ErrorCategory::MountPointUnavailable,
+                "the same source is already mounted",
+            ));
+        }
         let mount_point = self.select_mount_point()?;
         let image_reader: Arc<dyn BlockReader> = match source.physical_disk_index {
             Some(index) => Arc::new(linuxfs_windows::PhysicalDiskReader::open(index)?),
@@ -894,6 +995,7 @@ impl MountService for WindowsImageMountService {
         let mut manager = MountManager::new(host);
         manager.mount()?;
         self.mounts.insert(source.id, manager);
+        self.mount_identities.insert(source.id, source_identity);
         Ok(mount_point)
     }
 
@@ -906,6 +1008,7 @@ impl MountService for WindowsImageMountService {
         };
         manager.unmount()?;
         self.mounts.remove(&source.id);
+        self.mount_identities.remove(&source.id);
         Ok(())
     }
 

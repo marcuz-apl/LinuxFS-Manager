@@ -335,6 +335,18 @@ slint::slint! {
     }
 }
 
+fn start_pending_operation<T>(
+    pending: &std::sync::Mutex<Option<T>>,
+    start: impl FnOnce() -> T,
+) -> bool {
+    let mut pending = pending.lock().expect("pending operation lock");
+    if pending.is_some() {
+        return false;
+    }
+    *pending = Some(start());
+    true
+}
+
 #[cfg(windows)]
 fn source_items(sources: &[linuxfs_app::SourceViewModel]) -> slint::ModelRc<slint::SharedString> {
     use slint::{ModelRc, SharedString, VecModel};
@@ -699,16 +711,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let provider_for_operation = Arc::clone(&provider);
             let probe_path = path.clone();
-            let operation = spawn_background(move || {
-                provider_for_operation
-                    .lock()
-                    .expect("provider lock poisoned")
-                    .open_image(&probe_path)
+            let started = start_pending_operation(&pending, move || {
+                let operation = spawn_background(move || {
+                    provider_for_operation
+                        .lock()
+                        .expect("provider lock poisoned")
+                        .open_image(&probe_path)
+                });
+                PendingOperation::Probe(operation, path)
             });
-            *pending.lock().expect("pending operation lock") =
-                Some(PendingOperation::Probe(operation, path));
             if let Some(window) = weak.upgrade() {
-                window.set_status("Opening image read-only…".into());
+                window.set_status(
+                    if started {
+                        "Opening image read-only…"
+                    } else {
+                        "Wait for the current operation to finish before opening another source"
+                    }
+                    .into(),
+                );
             }
         })
     };
@@ -718,20 +738,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let weak = window.as_weak();
         Arc::new(move || {
             let provider_for_operation = Arc::clone(&provider);
-            let operation = spawn_background(move || {
-                let mut provider = provider_for_operation.lock().map_err(|_| {
-                    linuxfs_core::Error::new(
-                        linuxfs_core::ErrorCategory::Internal,
-                        "provider lock poisoned",
-                    )
-                })?;
-                provider.refresh()
+            let started = start_pending_operation(&pending, move || {
+                let operation = spawn_background(move || {
+                    let mut provider = provider_for_operation.lock().map_err(|_| {
+                        linuxfs_core::Error::new(
+                            linuxfs_core::ErrorCategory::Internal,
+                            "provider lock poisoned",
+                        )
+                    })?;
+                    provider.refresh()
+                });
+                PendingOperation::Refresh(operation)
             });
-            if let Ok(mut pending) = pending.lock() {
-                *pending = Some(PendingOperation::Refresh(operation));
-            }
             if let Some(window) = weak.upgrade() {
-                window.set_status("Scanning physical sources read-only…".into());
+                window.set_status(
+                    if started {
+                        "Scanning physical sources read-only…"
+                    } else {
+                        "Wait for the current operation to finish before scanning again"
+                    }
+                    .into(),
+                );
             }
         })
     };
@@ -759,7 +786,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     let state_for_open = Arc::clone(&state);
     let start_probe_for_open = start_probe.clone();
+    let pending_for_open = Arc::clone(&pending);
+    let weak = window.as_weak();
     window.on_open_image_clicked(move || {
+        if pending_for_open
+            .lock()
+            .map(|pending| pending.is_some())
+            .unwrap_or(true)
+        {
+            if let Some(window) = weak.upgrade() {
+                window.set_status(
+                    "Wait for the current operation to finish before opening another source".into(),
+                );
+            }
+            return;
+        }
         let dialog = rfd::FileDialog::new()
             .set_title("Open Linux filesystem image")
             .add_filter("Disk images", &["img", "raw", "dd", "iso", "bin"])
@@ -775,8 +816,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source_rows = Arc::clone(&sources_for_ui);
     let current_source_for_selection = Arc::clone(&current_source);
     let state_for_selection = Arc::clone(&state);
+    let pending_for_selection = Arc::clone(&pending);
     let weak = window.as_weak();
     window.on_source_selected(move |index| {
+        if pending_for_selection
+            .lock()
+            .map(|pending| pending.is_some())
+            .unwrap_or(true)
+        {
+            if let Some(window) = weak.upgrade() {
+                window.set_status(
+                    "Wait for the current mount operation to finish before selecting another source"
+                        .into(),
+                );
+            }
+            return;
+        }
         let source = source_rows.lock().ok().and_then(|sources| {
             usize::try_from(index)
                 .ok()
@@ -817,14 +872,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(source) => source.id,
             Err(_) => linuxfs_app::SourceId(0),
         };
-        let service_for_operation = Arc::clone(&service_for_mount);
-        let operation = match source {
-            Ok(source) => spawn_background(move || {
-                service_for_operation
-                    .lock()
-                    .expect("mount service lock poisoned")
-                    .mount(&source)
-            }),
+        let started = match source {
+            Ok(source) => {
+                let service_for_operation = Arc::clone(&service_for_mount);
+                start_pending_operation(&pending_for_mount, move || {
+                    let operation = spawn_background(move || {
+                        service_for_operation
+                            .lock()
+                            .expect("mount service lock poisoned")
+                            .mount(&source)
+                    });
+                    PendingOperation::Mount(operation, source_id)
+                })
+            }
             Err(error) => {
                 if let Some(window) = weak.upgrade() {
                     window.set_status(format!("Mount failed: {error}").into());
@@ -832,12 +892,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return;
             }
         };
-        *pending_for_mount.lock().expect("pending operation lock") =
-            Some(PendingOperation::Mount(operation, source_id));
         if let Some(window) = weak.upgrade() {
-            window.set_status("Mounting read-only…".into());
-            window.set_can_mount(false);
-            window.set_can_unmount(false);
+            if started {
+                window.set_status("Mounting read-only…".into());
+                window.set_can_mount(false);
+                window.set_can_unmount(false);
+            } else {
+                window.set_status(
+                    "Wait for the current operation to finish before mounting another source"
+                        .into(),
+                );
+            }
         }
     });
     let weak = window.as_weak();
@@ -855,14 +920,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(source) => source.id,
             Err(_) => linuxfs_app::SourceId(0),
         };
-        let service_for_operation = Arc::clone(&service_for_unmount);
-        let operation = match source {
-            Ok(source) => spawn_background(move || {
-                service_for_operation
-                    .lock()
-                    .expect("mount service lock poisoned")
-                    .unmount(&source)
-            }),
+        let started = match source {
+            Ok(source) => {
+                let service_for_operation = Arc::clone(&service_for_unmount);
+                start_pending_operation(&pending_for_unmount, move || {
+                    let operation = spawn_background(move || {
+                        service_for_operation
+                            .lock()
+                            .expect("mount service lock poisoned")
+                            .unmount(&source)
+                    });
+                    PendingOperation::Unmount(operation, source_id)
+                })
+            }
             Err(error) => {
                 if let Some(window) = weak.upgrade() {
                     window.set_status(format!("Unmount failed: {error}").into());
@@ -870,12 +940,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return;
             }
         };
-        *pending_for_unmount.lock().expect("pending operation lock") =
-            Some(PendingOperation::Unmount(operation, source_id));
         if let Some(window) = weak.upgrade() {
-            window.set_status("Unmounting…".into());
-            window.set_can_mount(false);
-            window.set_can_unmount(false);
+            if started {
+                window.set_status("Unmounting…".into());
+                window.set_can_mount(false);
+                window.set_can_unmount(false);
+            } else {
+                window.set_status(
+                    "Wait for the current operation to finish before unmounting another source"
+                        .into(),
+                );
+            }
         }
     });
     let weak = window.as_weak();
@@ -1218,5 +1293,17 @@ mod tests {
     #[test]
     fn empty_cli_path_is_rejected_without_fake_success() {
         assert_eq!(UiState::validate_path(" "), Err("provide an image path"));
+    }
+
+    #[test]
+    fn pending_operation_start_does_not_replace_an_active_operation() {
+        let pending = std::sync::Mutex::new(None);
+
+        assert!(start_pending_operation(&pending, || "first".to_owned()));
+        assert!(!start_pending_operation(&pending, || "second".to_owned()));
+        assert_eq!(
+            pending.lock().expect("pending lock").as_deref(),
+            Some("first")
+        );
     }
 }
