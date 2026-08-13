@@ -14,6 +14,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub preferred_drive_letter: Option<String>,
     #[serde(default)]
+    pub ui_language: Option<String>,
+    #[serde(default)]
     pub recent_images: Vec<String>,
     #[serde(default = "default_logging_enabled")]
     pub logging_enabled: bool,
@@ -26,6 +28,7 @@ impl Default for AppConfig {
         Self {
             config_version: CURRENT_CONFIG_VERSION,
             preferred_drive_letter: None,
+            ui_language: None,
             recent_images: Vec::new(),
             logging_enabled: true,
         }
@@ -169,6 +172,22 @@ mod tests {
         }
         store.save(&config).expect("save");
         assert_eq!(store.load().expect("load"), config.bounded());
+        let _ = fs::remove_file(path);
+    }
+    #[test]
+    fn config_round_trips_an_optional_ui_language() {
+        let path = temp_path();
+        let store = ConfigStore::new(&path);
+        let config = AppConfig {
+            ui_language: Some("ja-JP".into()),
+            ..Default::default()
+        };
+
+        store.save(&config).expect("save");
+        assert_eq!(
+            store.load().expect("load").ui_language,
+            Some("ja-JP".into())
+        );
         let _ = fs::remove_file(path);
     }
     #[test]
