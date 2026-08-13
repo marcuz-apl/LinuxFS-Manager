@@ -60,6 +60,8 @@ LinuxFS Manager now verifies the installed WinFsp framework before it creates a 
 
 When a requirement is missing, the app opens a concise prerequisite window with an official-download action and a live **Recheck** action. It does not download or install anything, and it does not start or change a Windows service. Each assessment is recorded atomically as a diagnostic-only TOML file at `%LOCALAPPDATA%\LinuxFS Manager\winfsp-status.toml`; that record never authorizes a mount.
 
+The main application now presents its read-only guarantee, live WinFsp engine state, and current operation message together in one status panel beneath the source workspace. This makes the installed engine state visible without relying on the saved diagnostic record.
+
 ## 2026-08-13 — About text and startup window sizing
 
 The About window now lists the complete supported set: Ext2/3/4, SquashFS, and supported XFS images. The main window now starts with explicit 1200×820 dimensions, and its Windows startup position is calculated from the monitor work area so the window opens centered without covering the taskbar.

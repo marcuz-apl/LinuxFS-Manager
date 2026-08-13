@@ -13,6 +13,7 @@ slint::slint! {
         icon: @image-url("../../../assets/linuxfs-manager.png");
 
         in-out property <string> status: "Ready.";
+        in-out property <string> engine_status: "WinFsp engine: checking…";
         in-out property <string> app_version: "";
         in-out property <string> source_name: "No source loaded";
         in-out property <string> source_details: "Open a raw Linux filesystem image to inspect it.";
@@ -79,25 +80,6 @@ slint::slint! {
                 Button { width: 112px; text: "Scan Drives"; clicked => { root.scan_drives_clicked(); } }
                 Button { width: 122px; text: "Open Image…"; clicked => { root.open_image_clicked(); } }
                 Button { width: 82px; text: "About"; clicked => { about_popup.show(); } }
-            }
-
-            Rectangle {
-                height: 52px;
-                background: #eaf3ff;
-                border-radius: 10px;
-                border-width: 1px;
-                border-color: #cfe3f8;
-
-                Rectangle {
-                    x: 14px;
-                    y: 13px;
-                    width: 24px;
-                    height: 24px;
-                    background: #2f80d1;
-                    border-radius: 12px;
-                    Text { text: "✓"; color: #ffffff; font-size: 14px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
-                }
-                Text { x: 50px; text: "READ ONLY — source filesystems are never modified."; color: #1d568b; font-weight: 600; vertical-alignment: center; }
             }
 
             Rectangle {
@@ -169,10 +151,35 @@ slint::slint! {
             }
 
             Rectangle {
-                height: 34px;
-                background: #edf2f7;
-                border-radius: 8px;
-                Text { x: 12px; text: status; color: #536579; vertical-alignment: center; }
+                height: 64px;
+                background: #edf5fb;
+                border-radius: 10px;
+                border-width: 1px;
+                border-color: #d8e5f0;
+
+                Rectangle {
+                    x: 14px;
+                    y: 18px;
+                    width: 8px;
+                    height: 28px;
+                    background: #267d53;
+                    border-radius: 4px;
+                }
+                Text {
+                    x: 36px;
+                    y: 8px;
+                    text: "READ ONLY — source filesystems are never modified.";
+                    color: #245f47;
+                    font-size: 13px;
+                    font-weight: 700;
+                }
+                Text {
+                    x: 36px;
+                    y: 32px;
+                    text: engine_status + "  ·  " + status;
+                    color: #46627a;
+                    font-size: 12px;
+                }
             }
         }
 
@@ -438,6 +445,35 @@ impl PrerequisiteState {
     }
 }
 
+fn engine_status_text(assessment: &linuxfs_winfsp::WinFspAssessment) -> String {
+    use linuxfs_winfsp::WinFspRequirement;
+
+    match assessment.requirement() {
+        WinFspRequirement::Ready => "WinFsp engine: Ready — installed, launcher running".to_owned(),
+        WinFspRequirement::InstallationNotRegistered => {
+            "WinFsp engine: Unavailable — installation not registered".to_owned()
+        }
+        WinFspRequirement::RuntimeDllMissing => {
+            "WinFsp engine: Unavailable — runtime DLL missing".to_owned()
+        }
+        WinFspRequirement::LauncherNotInstalled => {
+            "WinFsp engine: Unavailable — launcher not installed".to_owned()
+        }
+        WinFspRequirement::LauncherNotRunning => {
+            "WinFsp engine: Unavailable — launcher not running".to_owned()
+        }
+        WinFspRequirement::LauncherStatusUnavailable => {
+            "WinFsp engine: Unavailable — launcher status unavailable".to_owned()
+        }
+        WinFspRequirement::RuntimeInitializationFailed => {
+            "WinFsp engine: Unavailable — initialization failed".to_owned()
+        }
+        WinFspRequirement::UnsupportedPlatform => {
+            "WinFsp engine: Unavailable — Windows required".to_owned()
+        }
+    }
+}
+
 #[cfg(windows)]
 #[allow(unsafe_code)]
 fn open_winfsp_download_page() -> Result<(), Box<dyn std::error::Error>> {
@@ -613,9 +649,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Unmount(Result<linuxfs_app::SourceId, String>),
     }
 
-    let assessment = linuxfs_winfsp::assess_winfsp();
+    let mut assessment = linuxfs_winfsp::assess_winfsp();
     let _ = linuxfs_app::runtime::record_winfsp_assessment(&assessment);
     if !assessment.is_ready() && !run_prerequisite_gate(&assessment)? {
+        return Ok(());
+    }
+    assessment = linuxfs_winfsp::assess_winfsp();
+    let _ = linuxfs_app::runtime::record_winfsp_assessment(&assessment);
+    if !assessment.is_ready() {
         return Ok(());
     }
 
@@ -639,6 +680,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     window.show()?;
     center_main_window(&window);
     window.set_app_version(env!("LINUXFS_MANAGER_VERSION").into());
+    window.set_engine_status(engine_status_text(&assessment).into());
     let initial_path = image.unwrap_or_default();
     window.set_image_path(initial_path.clone().into());
     let state = Arc::new(Mutex::new(UiState::new(&initial_path)));
@@ -1080,6 +1122,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn engine_status_text_confirms_a_ready_winfsp_engine() {
+        let assessment = linuxfs_winfsp::WinFspAssessment::from_checks(
+            true,
+            true,
+            linuxfs_winfsp::WinFspLauncherStatus::Running,
+            true,
+        );
+
+        assert_eq!(
+            engine_status_text(&assessment),
+            "WinFsp engine: Ready — installed, launcher running"
+        );
+    }
 
     #[test]
     fn prerequisite_state_blocks_startup_until_winfsp_is_ready() {
