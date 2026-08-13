@@ -11,10 +11,12 @@ slint::slint! {
         preferred-height: 820px;
         background: #f5f8fc;
         icon: @image-url("../../../assets/linuxfs-manager.png");
+        default-font-family: root.ui_font_family;
 
         in-out property <string> status: "Ready.";
         in-out property <string> engine_status: "WinFsp engine: checking…";
         in-out property <string> app_version: "";
+        in-out property <string> ui_font_family: "Segoe UI";
         in-out property <string> source_name: "No source loaded";
         in-out property <string> source_details: "Open a raw Linux filesystem image to inspect it.";
         in-out property <string> image_path: "";
@@ -280,8 +282,10 @@ slint::slint! {
         preferred-height: 470px;
         background: #f5f8fc;
         icon: @image-url("../../../assets/linuxfs-manager.png");
+        default-font-family: root.ui_font_family;
 
         in-out property <string> requirement_message: "WinFsp is required before LinuxFS Manager can open.";
+        in-out property <string> ui_font_family: "Segoe UI";
         in-out property <string> app_title: "LinuxFS Manager";
         in-out property <string> prerequisite_title: "WinFsp is required";
         in-out property <string> prerequisite_subtitle: "A Windows filesystem framework prerequisite";
@@ -396,6 +400,7 @@ fn apply_localized_copy(
     catalog: &linuxfs_preview::localization::LocalizedCatalog,
 ) {
     let copy = catalog.copy;
+    window.set_ui_font_family(copy.language.default_font_family().into());
     window.set_app_title(catalog.text("app_title", copy.app_title).into());
     window.set_app_subtitle(catalog.text("app_subtitle", copy.app_subtitle).into());
     window.set_scan_drives_text(catalog.text("scan_drives", copy.scan_drives).into());
@@ -453,6 +458,7 @@ fn apply_prerequisite_copy(
     catalog: &linuxfs_preview::localization::LocalizedCatalog,
 ) {
     let copy = catalog.copy;
+    window.set_ui_font_family(copy.language.default_font_family().into());
     window.set_app_title(catalog.text("app_title", copy.app_title).into());
     window.set_prerequisite_title(
         catalog

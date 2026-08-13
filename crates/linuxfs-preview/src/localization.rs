@@ -84,6 +84,14 @@ impl UiLanguage {
             Self::Korean => 12,
         }
     }
+
+    pub const fn default_font_family(self) -> &'static str {
+        match self {
+            Self::ChineseSimplified => "Microsoft YaHei UI",
+            Self::ChineseTraditional => "Microsoft JhengHei UI",
+            _ => "Segoe UI",
+        }
+    }
 }
 
 pub fn language_from_selector(index: i32) -> Option<UiLanguage> {
@@ -1191,6 +1199,18 @@ mod tests {
             "LinuxFS Manager"
         );
         let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn chinese_languages_request_the_matching_windows_ui_font() {
+        assert_eq!(
+            UiLanguage::ChineseSimplified.default_font_family(),
+            "Microsoft YaHei UI"
+        );
+        assert_eq!(
+            UiLanguage::ChineseTraditional.default_font_family(),
+            "Microsoft JhengHei UI"
+        );
     }
 
     fn temp_directory() -> std::path::PathBuf {
