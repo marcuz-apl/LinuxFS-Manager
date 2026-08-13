@@ -17,6 +17,12 @@ The main Slint window now uses a dark navy **Sources** rail for detected partiti
 
 Validation for this presentation-only update included Slint compilation, the Impeccable layout inspection, workspace formatting and Clippy checks, the non-preview workspace test suite, a workspace build, and an optimized portable package with `winfsp-x64.dll` included.
 
+## 2026-08-13 — mount-state continuity and drive-letter fallback
+
+Opening an image or refreshing physical discovery no longer discards a source that the application still owns as mounted. Fresh discovery rows inherit the matching mounted state, while a still-mounted source absent from a new result remains visible so its **Unmount** control stays available.
+
+The mount service now permits multiple concurrently mounted read-only sources. When Windows reports the preferred letter as occupied, the existing free-letter selector chooses the highest free letter instead. This applies equally when another LinuxFS Manager mount owns the original preferred drive letter.
+
 ## 2026-08-13 — push and filesystem backend extension
 
 ### Starting point

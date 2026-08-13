@@ -90,6 +90,23 @@ pub fn apply_source_mount_state(
     true
 }
 
+/// Carry mount ownership forward when a scan returns a fresh view of a source.
+pub fn reconcile_sources_preserving_mount_state(
+    existing: &[SourceViewModel],
+    mut refreshed: Vec<SourceViewModel>,
+) -> Vec<SourceViewModel> {
+    for mounted in existing.iter().filter(|source| source.can_unmount()) {
+        if let Some(source) = refreshed.iter_mut().find(|source| source.id == mounted.id) {
+            source.status = SourceStatus::Mounted;
+            source.mount_point = mounted.mount_point.clone();
+            source.read_only = true;
+        } else {
+            refreshed.push(mounted.clone());
+        }
+    }
+    refreshed
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppCommand {
     Refresh,
@@ -208,6 +225,47 @@ mod tests {
         assert_eq!(model.sources().len(), 1);
         assert!(model.busy());
         assert_eq!(model.message(), Some("Scanning"));
+    }
+
+    #[test]
+    fn refreshed_source_keeps_an_owned_mount_available_for_unmount() {
+        let mut mounted = compatible_source();
+        mounted.id = SourceId(3);
+        mounted.status = SourceStatus::Mounted;
+        mounted.mount_point = Some("L:".to_owned());
+        let refreshed = vec![SourceViewModel {
+            status: SourceStatus::Compatible,
+            mount_point: None,
+            ..mounted.clone()
+        }];
+
+        let sources = reconcile_sources_preserving_mount_state(&[mounted], refreshed);
+
+        assert_eq!(sources.len(), 1);
+        assert!(sources[0].can_unmount());
+        assert_eq!(sources[0].mount_point.as_deref(), Some("L:"));
+    }
+
+    #[test]
+    fn opening_an_image_keeps_another_mounted_source_in_the_list() {
+        let mut mounted = compatible_source();
+        mounted.id = SourceId(3);
+        mounted.status = SourceStatus::Mounted;
+        mounted.mount_point = Some("L:".to_owned());
+        let image = SourceViewModel {
+            id: SourceId(4),
+            display_name: "other.img".to_owned(),
+            ..compatible_source()
+        };
+
+        let sources = reconcile_sources_preserving_mount_state(&[mounted], vec![image]);
+
+        assert_eq!(sources.len(), 2);
+        assert!(
+            sources
+                .iter()
+                .any(|source| source.id == SourceId(3) && source.can_unmount())
+        );
     }
 }
 
@@ -807,12 +865,6 @@ impl MountService for WindowsImageMountService {
             return Err(linuxfs_core::Error::new(
                 linuxfs_core::ErrorCategory::WinFspFailure,
                 "source is already mounted",
-            ));
-        }
-        if !self.mounts.is_empty() {
-            return Err(linuxfs_core::Error::new(
-                linuxfs_core::ErrorCategory::MountPointUnavailable,
-                "mount point is already in use by another source",
             ));
         }
         let mount_point = self.select_mount_point()?;

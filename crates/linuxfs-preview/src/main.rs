@@ -985,19 +985,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         window.set_source_details(ui.source_details.clone().into());
                         window.set_can_mount(ui.can_mount);
                         window.set_can_unmount(ui.can_unmount);
+                        let mut selected_index = 0;
                         if let Ok(mut sources) = sources_for_timer.lock() {
-                            *sources = vec![source.clone()];
+                            *sources = linuxfs_app::reconcile_sources_preserving_mount_state(
+                                &sources,
+                                vec![source.clone()],
+                            );
+                            selected_index = sources
+                                .iter()
+                                .position(|candidate| candidate.id == source.id)
+                                .and_then(|index| i32::try_from(index).ok())
+                                .unwrap_or(0);
                             window.set_source_names(source_items(&sources));
                         }
-                        window.set_selected_source(0);
+                        window.set_selected_source(selected_index);
                         *source_for_timer.lock().expect("source lock") = Some(source);
                         window.set_status("Source refreshed read-only".into());
                     }
                     CompletedOperation::Refresh(Ok(sources)) => {
-                        if let Ok(mut rows) = sources_for_timer.lock() {
-                            *rows = sources.clone();
+                        let sources = if let Ok(mut rows) = sources_for_timer.lock() {
+                            *rows = linuxfs_app::reconcile_sources_preserving_mount_state(
+                                &rows,
+                                sources,
+                            );
                             window.set_source_names(source_items(&rows));
-                        }
+                            rows.clone()
+                        } else {
+                            sources
+                        };
                         if let Some(source) = sources.first().cloned() {
                             let mut ui = state_for_timer.lock().expect("UI state lock");
                             ui.image_path.clear();
