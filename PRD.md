@@ -269,7 +269,7 @@ Target compatibility:
 - Ext3
 - Ext4
 - SquashFS 4.0
-- XFS images up to the backend's documented 512 MiB safety limit
+- XFS images up to the backend's documented 2 GiB safety limit
 
 The backends may wrap maintained Rust readers behind LinuxFS Manager interfaces.
 SquashFS must use bounded random reads. XFS must fail closed for sources above
@@ -352,6 +352,21 @@ Preferred V1 stack:
 - Rust application/core logic
 
 The UI shall remain a thin presentation layer; filesystem parsing and device access must not live in the `.slint` layer.
+
+### FR-10a — Desktop localization
+
+The desktop UI shall provide these left-to-right languages: English, French,
+German, Spanish, Portuguese (Brazil), Italian, Polish, Russian, Simplified
+Chinese, Traditional Chinese, Japanese, and Korean. On first launch it shall
+use the Windows user locale when supported, otherwise English. The header shall
+provide an **Automatic (Windows)** selector and an explicit-language selector.
+The optional explicit preference shall be stored in the versioned configuration
+file; changing language must not rescan sources, alter a mount, or change a
+drive letter.
+
+Filesystem names, labels, paths, UUIDs, drive letters, and raw external error
+details remain exact values. Right-to-left languages are outside this release
+until separately designed and validated.
 
 ### FR-11 — Main screen
 

@@ -9,6 +9,22 @@
 - **Desktop polish:** Added the app icon, larger default window, About dialog, version propagation from `VERSION`, and the polished source-selection UI.
 - **Current extension:** Routed all consumers through a backend registry and added SquashFS plus bounded XFS image support without adding source writes.
 
+## 2026-08-13 — desktop localization
+
+LinuxFS Manager now ships twelve bundled left-to-right desktop languages:
+English, French, German, Spanish, Portuguese (Brazil), Italian, Polish,
+Russian, Simplified Chinese, Traditional Chinese, Japanese, and Korean. The
+header selector supports **Automatic (Windows)** on first launch, falling back
+to English for unsupported Windows locales. Explicit choices persist in the
+versioned TOML configuration without changing mount, scan, source, or drive
+letter state.
+
+All translated content is compiled into the executable; no mutable external
+translation files are packaged. Filesystem labels, paths, UUIDs, drive letters,
+and raw external errors deliberately remain unchanged. Arabic is excluded from
+this release because right-to-left layout support has not been designed or
+validated.
+
 ## 2026-08-13 — light workspace palette and dark native caption
 
 The high-contrast navy source rail and status strip were replaced with the

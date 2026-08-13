@@ -160,6 +160,7 @@ V1 persistent state belongs in a small versioned configuration file, preferably:
 Suitable config data:
 
 - UI preferences
+- optional UI language override (`None` means Automatic/Windows locale)
 - bounded list of recent image paths
 - preferred drive letter
 - logging preference
@@ -201,6 +202,7 @@ Slint UI should:
 - render state
 - emit user intentions
 - display progress/errors
+- localize application-owned copy without changing source metadata, mount state, or drive-letter selection
 
 Slint UI should not:
 

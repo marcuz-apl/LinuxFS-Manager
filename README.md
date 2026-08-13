@@ -63,6 +63,18 @@ LinuxFSManager.exe
 
 The application starts with a 1200×820 window centered in the primary monitor work area. Use **Scan Drives** to discover physical sources, **Open Image…** to inspect an image, **Mount** to expose a supported source through WinFsp, and **Unmount** to release it.
 
+## Desktop languages
+
+The desktop UI is available in English, Français, Deutsch, Español, Português
+(Brasil), Italiano, Polski, Русский, 简体中文, 繁體中文, 日本語, and 한국어. The
+header selector defaults to **Automatic (Windows)**, which uses the Windows user
+locale when supported and otherwise falls back to English. An explicit choice is
+saved in `%APPDATA%\LinuxFS Manager\config.toml` and can be cleared by selecting
+Automatic again.
+
+Filesystem labels, file names, paths, UUIDs, drive letters, and raw Windows
+errors remain exact source values; the application does not translate them.
+
 ## CLI inspection
 
 The CLI never opens a source for writing and streams regular-file output:
