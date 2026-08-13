@@ -7,6 +7,8 @@ param(
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $releaseExe = Join-Path $repoRoot "target\release\LinuxFSManager.exe"
+$licenseFile = Join-Path $repoRoot "LICENSE"
+$noticeFile = Join-Path $repoRoot "NOTICE.md"
 $distRoot = Join-Path $repoRoot "dist"
 $packageDir = Join-Path $distRoot ("LinuxFSManager-win64-{0}" -f $Tag)
 $zipPath = Join-Path $distRoot ("LinuxFSManager-win64-{0}.zip" -f $Tag)
@@ -26,6 +28,12 @@ if (-not $SkipBuild) {
 
 if (-not (Test-Path -LiteralPath $releaseExe -PathType Leaf)) {
     throw "Release executable was not found at $releaseExe."
+}
+if (-not (Test-Path -LiteralPath $licenseFile -PathType Leaf)) {
+    throw "LICENSE was not found at $licenseFile."
+}
+if (-not (Test-Path -LiteralPath $noticeFile -PathType Leaf)) {
+    throw "NOTICE.md was not found at $noticeFile."
 }
 
 $dllCandidates = [System.Collections.Generic.List[string]]::new()
@@ -62,17 +70,23 @@ if (-not $dllSource) {
 New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
 Copy-Item -LiteralPath $releaseExe -Destination (Join-Path $packageDir "LinuxFSManager.exe") -Force
 Copy-Item -LiteralPath $dllSource -Destination (Join-Path $packageDir "winfsp-x64.dll") -Force
+Copy-Item -LiteralPath $licenseFile -Destination (Join-Path $packageDir "LICENSE") -Force
+Copy-Item -LiteralPath $noticeFile -Destination (Join-Path $packageDir "NOTICE.md") -Force
 Copy-Item -LiteralPath $dllSource -Destination (Join-Path (Split-Path $releaseExe) "winfsp-x64.dll") -Force
 
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
 }
-Compress-Archive -LiteralPath (Join-Path $packageDir "LinuxFSManager.exe"), (Join-Path $packageDir "winfsp-x64.dll") -DestinationPath $zipPath -CompressionLevel Optimal
+Compress-Archive -LiteralPath (Join-Path $packageDir "LinuxFSManager.exe"), (Join-Path $packageDir "winfsp-x64.dll"), (Join-Path $packageDir "LICENSE"), (Join-Path $packageDir "NOTICE.md") -DestinationPath $zipPath -CompressionLevel Optimal
 
 $packagedExe = Get-Item -LiteralPath (Join-Path $packageDir "LinuxFSManager.exe")
 $packagedDll = Get-Item -LiteralPath (Join-Path $packageDir "winfsp-x64.dll")
+$packagedLicense = Get-Item -LiteralPath (Join-Path $packageDir "LICENSE")
+$packagedNotice = Get-Item -LiteralPath (Join-Path $packageDir "NOTICE.md")
 $packagedZip = Get-Item -LiteralPath $zipPath
 Write-Output ("Package: {0}" -f $packageDir)
 Write-Output ("ZIP: {0}" -f $packagedZip.FullName)
 Write-Output ("Executable: {0} bytes" -f $packagedExe.Length)
 Write-Output ("WinFsp DLL: {0} bytes ({1})" -f $packagedDll.Length, $dllSource)
+Write-Output ("License: {0} bytes" -f $packagedLicense.Length)
+Write-Output ("Notices: {0} bytes" -f $packagedNotice.Length)

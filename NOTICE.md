@@ -1,0 +1,10 @@
+# LinuxFS Manager notices
+
+Copyright © 2026 Alfazen Inc.
+
+LinuxFS Manager is licensed under the GNU General Public License, version 3
+or (at your option) any later version. See `LICENSE`.
+
+The distributed WinFsp runtime is a separate component. WinFsp is available
+under GPLv3 with a special exception for Free/Libre and Open Source Software;
+see <https://winfsp.dev/> and its accompanying license materials.

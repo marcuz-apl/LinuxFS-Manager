@@ -62,6 +62,12 @@ When a requirement is missing, the app opens a concise prerequisite window with 
 
 The main application now presents its read-only guarantee, live WinFsp engine state, and current operation message together in one status panel beneath the source workspace. This makes the installed engine state visible without relying on the saved diagnostic record.
 
+## 2026-08-13 — open-source license
+
+LinuxFS Manager is now explicitly licensed as GPL-3.0-or-later. The repository
+includes the complete GPLv3 text, a project notice file, Cargo package metadata,
+and release packaging that carries the license with every portable binary.
+
 ## 2026-08-13 — About text and startup window sizing
 
 The About window now lists the complete supported set: Ext2/3/4, SquashFS, and supported XFS images. The main window now starts with explicit 1200×820 dimensions, and its Windows startup position is calculated from the monitor work area so the window opens centered without covering the taskbar.
