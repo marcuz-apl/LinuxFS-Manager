@@ -292,6 +292,118 @@ impl UiCopy {
         };
         format!("{message}: {error}")
     }
+    pub fn no_source_loaded(self) -> &'static str {
+        match self.language {
+            UiLanguage::English => "No source loaded",
+            UiLanguage::French => "Aucune source chargée",
+            UiLanguage::German => "Keine Quelle geladen",
+            UiLanguage::Spanish => "No hay fuente cargada",
+            UiLanguage::PortugueseBrazil => "Nenhuma fonte carregada",
+            UiLanguage::Italian => "Nessuna origine caricata",
+            UiLanguage::Polish => "Nie załadowano źródła",
+            UiLanguage::Russian => "Источник не загружен",
+            UiLanguage::ChineseSimplified => "未加载源",
+            UiLanguage::ChineseTraditional => "未載入來源",
+            UiLanguage::Japanese => "ソースが読み込まれていません",
+            UiLanguage::Korean => "원본이 로드되지 않았습니다",
+        }
+    }
+    pub fn open_raw_image_hint(self) -> &'static str {
+        match self.language {
+            UiLanguage::English => "Open a raw Linux filesystem image to inspect it.",
+            UiLanguage::French => {
+                "Ouvrez une image brute de système de fichiers Linux pour l’inspecter."
+            }
+            UiLanguage::German => "Öffnen Sie ein rohes Linux-Dateisystem-Image zur Untersuchung.",
+            UiLanguage::Spanish => {
+                "Abra una imagen sin procesar de un sistema de archivos Linux para inspeccionarla."
+            }
+            UiLanguage::PortugueseBrazil => {
+                "Abra uma imagem bruta de sistema de arquivos Linux para examiná-la."
+            }
+            UiLanguage::Italian => "Apri un’immagine raw di filesystem Linux per esaminarla.",
+            UiLanguage::Polish => "Otwórz surowy obraz systemu plików Linux, aby go sprawdzić.",
+            UiLanguage::Russian => {
+                "Откройте необработанный образ файловой системы Linux для просмотра."
+            }
+            UiLanguage::ChineseSimplified => "打开原始 Linux 文件系统映像以进行查看。",
+            UiLanguage::ChineseTraditional => "開啟原始 Linux 檔案系統映像檔以進行檢視。",
+            UiLanguage::Japanese => "raw Linux ファイルシステムイメージを開いて確認します。",
+            UiLanguage::Korean => "원시 Linux 파일 시스템 이미지를 열어 검사하세요.",
+        }
+    }
+    pub fn no_compatible_source(self) -> &'static str {
+        match self.language {
+            UiLanguage::English => "No compatible source",
+            UiLanguage::French => "Aucune source compatible",
+            UiLanguage::German => "Keine kompatible Quelle",
+            UiLanguage::Spanish => "No hay fuente compatible",
+            UiLanguage::PortugueseBrazil => "Nenhuma fonte compatível",
+            UiLanguage::Italian => "Nessuna origine compatibile",
+            UiLanguage::Polish => "Brak zgodnego źródła",
+            UiLanguage::Russian => "Нет совместимого источника",
+            UiLanguage::ChineseSimplified => "没有兼容的源",
+            UiLanguage::ChineseTraditional => "沒有相容的來源",
+            UiLanguage::Japanese => "互換性のあるソースがありません",
+            UiLanguage::Korean => "호환되는 원본이 없습니다",
+        }
+    }
+    pub fn physical_scan_empty_details(self) -> &'static str {
+        match self.language {
+            UiLanguage::English => {
+                "No supported Linux filesystem was found, or Windows denied raw-disk access. Run elevated to scan physical disks."
+            }
+            UiLanguage::French => {
+                "Aucun système de fichiers Linux pris en charge n’a été trouvé, ou Windows a refusé l’accès brut au disque. Exécutez en tant qu’administrateur pour analyser les disques physiques."
+            }
+            UiLanguage::German => {
+                "Kein unterstütztes Linux-Dateisystem gefunden, oder Windows verweigerte den Rohdatenträgerzugriff. Führen Sie die App erhöht aus, um physische Datenträger zu scannen."
+            }
+            UiLanguage::Spanish => {
+                "No se encontró un sistema de archivos Linux compatible o Windows denegó el acceso sin procesar al disco. Ejecute como administrador para analizar discos físicos."
+            }
+            UiLanguage::PortugueseBrazil => {
+                "Nenhum sistema de arquivos Linux compatível foi encontrado ou o Windows negou o acesso bruto ao disco. Execute como administrador para verificar discos físicos."
+            }
+            UiLanguage::Italian => {
+                "Non è stato trovato alcun filesystem Linux supportato oppure Windows ha negato l’accesso raw al disco. Esegui come amministratore per analizzare i dischi fisici."
+            }
+            UiLanguage::Polish => {
+                "Nie znaleziono obsługiwanego systemu plików Linux albo Windows odmówił surowego dostępu do dysku. Uruchom jako administrator, aby skanować dyski fizyczne."
+            }
+            UiLanguage::Russian => {
+                "Поддерживаемая файловая система Linux не найдена либо Windows запретила прямой доступ к диску. Запустите от имени администратора для сканирования физических дисков."
+            }
+            UiLanguage::ChineseSimplified => {
+                "未找到受支持的 Linux 文件系统，或者 Windows 拒绝了原始磁盘访问。请以管理员身份运行以扫描物理磁盘。"
+            }
+            UiLanguage::ChineseTraditional => {
+                "找不到支援的 Linux 檔案系統，或 Windows 拒絕原始磁碟存取。請以系統管理員身分執行以掃描實體磁碟。"
+            }
+            UiLanguage::Japanese => {
+                "対応する Linux ファイルシステムが見つからないか、Windows が raw ディスクアクセスを拒否しました。物理ディスクをスキャンするには管理者として実行してください。"
+            }
+            UiLanguage::Korean => {
+                "지원되는 Linux 파일 시스템을 찾을 수 없거나 Windows가 원시 디스크 액세스를 거부했습니다. 물리 디스크를 검색하려면 관리자 권한으로 실행하세요."
+            }
+        }
+    }
+    pub fn image_open_failed_details(self) -> &'static str {
+        match self.language {
+            UiLanguage::English => "The image could not be opened safely.",
+            UiLanguage::French => "L’image n’a pas pu être ouverte en toute sécurité.",
+            UiLanguage::German => "Das Image konnte nicht sicher geöffnet werden.",
+            UiLanguage::Spanish => "La imagen no se pudo abrir de forma segura.",
+            UiLanguage::PortugueseBrazil => "Não foi possível abrir a imagem com segurança.",
+            UiLanguage::Italian => "Non è stato possibile aprire l’immagine in modo sicuro.",
+            UiLanguage::Polish => "Nie można było bezpiecznie otworzyć obrazu.",
+            UiLanguage::Russian => "Не удалось безопасно открыть образ.",
+            UiLanguage::ChineseSimplified => "无法安全地打开映像。",
+            UiLanguage::ChineseTraditional => "無法安全地開啟映像檔。",
+            UiLanguage::Japanese => "イメージを安全に開けませんでした。",
+            UiLanguage::Korean => "이미지를 안전하게 열 수 없습니다.",
+        }
+    }
     pub fn is_complete(self) -> bool {
         TextKey::ALL
             .into_iter()
@@ -987,6 +1099,22 @@ mod tests {
         assert_eq!(
             language_from_self_name("繁體中文"),
             Some(UiLanguage::ChineseTraditional)
+        );
+    }
+
+    #[test]
+    fn empty_source_copy_is_localized_for_spanish_and_chinese() {
+        assert_eq!(
+            catalog(UiLanguage::Spanish).no_source_loaded(),
+            "No hay fuente cargada"
+        );
+        assert_eq!(
+            catalog(UiLanguage::ChineseSimplified).no_source_loaded(),
+            "未加载源"
+        );
+        assert_eq!(
+            catalog(UiLanguage::ChineseTraditional).no_source_loaded(),
+            "未載入來源"
         );
     }
 }

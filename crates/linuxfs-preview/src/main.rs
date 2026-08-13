@@ -75,10 +75,10 @@ slint::slint! {
                     Text { text: root.app_subtitle; font-size: 13px; color: #6b7c93; }
                 }
                 Rectangle { horizontal-stretch: 1; }
-                ComboBox { width: 178px; model: root.language_options; current-index: root.selected_language_index; selected(value) => { root.language_selected(value); } }
-                Button { width: 112px; text: root.scan_drives_text; clicked => { root.scan_drives_clicked(); } }
-                Button { width: 122px; text: root.open_image_text; clicked => { root.open_image_clicked(); } }
-                Button { width: 82px; text: root.about_text; clicked => { about_popup.show(); } }
+                ComboBox { width: 190px; model: root.language_options; current-index: root.selected_language_index; selected(value) => { root.language_selected(value); } }
+                Button { width: 132px; text: root.scan_drives_text; clicked => { root.scan_drives_clicked(); } }
+                Button { width: 142px; text: root.open_image_text; clicked => { root.open_image_clicked(); } }
+                Button { width: 96px; text: root.about_text; clicked => { about_popup.show(); } }
             }
 
             Rectangle {
@@ -164,10 +164,10 @@ slint::slint! {
                         HorizontalBox {
                             height: 42px;
                             spacing: 10px;
-                            Button { width: 118px; primary: true; text: root.mount_text; enabled: root.can_mount; clicked => { root.mount_clicked(); } }
-                            Button { width: 118px; text: root.unmount_text; enabled: root.can_unmount; clicked => { root.unmount_clicked(); } }
-                            Button { width: 172px; text: root.open_in_explorer_text; enabled: root.can_unmount; clicked => { root.open_explorer_clicked(); } }
-                            Button { width: 118px; text: root.details_text; clicked => { root.details_clicked(); } }
+                            Button { width: 132px; primary: true; text: root.mount_text; enabled: root.can_mount; clicked => { root.mount_clicked(); } }
+                            Button { width: 132px; text: root.unmount_text; enabled: root.can_unmount; clicked => { root.unmount_clicked(); } }
+                            Button { width: 218px; text: root.open_in_explorer_text; enabled: root.can_unmount; clicked => { root.open_explorer_clicked(); } }
+                            Button { width: 132px; text: root.details_text; clicked => { root.details_clicked(); } }
                             Rectangle { horizontal-stretch: 1; }
                         }
                     }
@@ -348,9 +348,9 @@ slint::slint! {
                         padding: 18px;
                         spacing: 7px;
                         Text { text: root.to_continue_text; font-size: 15px; font-weight: 700; color: #1d568b; }
-                        Text { text: root.prerequisite_step_one_text; color: #365a7c; }
-                        Text { text: root.prerequisite_step_two_text; color: #365a7c; }
-                        Text { text: root.prerequisite_step_three_text; color: #365a7c; }
+                        Text { text: root.prerequisite_step_one_text; color: #365a7c; wrap: word-wrap; }
+                        Text { text: root.prerequisite_step_two_text; color: #365a7c; wrap: word-wrap; }
+                        Text { text: root.prerequisite_step_three_text; color: #365a7c; wrap: word-wrap; }
                     }
                 }
 
@@ -711,12 +711,12 @@ struct UiState {
 }
 
 impl UiState {
-    fn new(path: &str) -> Self {
+    fn new(path: &str, copy: linuxfs_preview::localization::UiCopy) -> Self {
         Self {
             image_path: path.to_owned(),
-            source_name: "No source loaded".to_owned(),
-            source_details: "Open a raw Linux filesystem image to inspect it.".to_owned(),
-            status: "Ready.".to_owned(),
+            source_name: copy.no_source_loaded().to_owned(),
+            source_details: copy.open_raw_image_hint().to_owned(),
+            status: copy.ready(),
             can_mount: false,
             can_unmount: false,
         }
@@ -848,7 +848,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     window.set_status(copy.ready().into());
     let initial_path = image.unwrap_or_default();
     window.set_image_path(initial_path.clone().into());
-    let state = Arc::new(Mutex::new(UiState::new(&initial_path)));
+    let state = Arc::new(Mutex::new(UiState::new(&initial_path, copy)));
     let current_source = Arc::new(Mutex::new(None::<linuxfs_app::SourceViewModel>));
     let sources_for_ui = Arc::new(Mutex::new(Vec::<linuxfs_app::SourceViewModel>::new()));
     let pending = Arc::new(Mutex::new(None::<PendingOperation>));
@@ -1308,10 +1308,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             *source_for_timer.lock().expect("source lock") = Some(source);
                             window.set_status("Physical sources refreshed read-only".into());
                         } else {
-                            window.set_source_name("No compatible physical source".into());
-                            window.set_source_details(
-                                "No supported Linux filesystem was found, or Windows denied raw-disk access. Run elevated to scan physical disks.".into(),
-                            );
+                            window.set_source_name(copy.no_compatible_source().into());
+                            window.set_source_details(copy.physical_scan_empty_details().into());
                             window.set_can_mount(false);
                             window.set_can_unmount(false);
                             window.set_selected_source(-1);
@@ -1402,10 +1400,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             );
                         } else {
                             window.set_status(copy.refresh_failed(&error).into());
-                            window.set_source_name("No compatible source".into());
-                            window.set_source_details(
-                                "The image could not be opened safely.".into(),
-                            );
+                            window.set_source_name(copy.no_compatible_source().into());
+                            window.set_source_details(copy.image_open_failed_details().into());
                             window.set_can_mount(false);
                             window.set_can_unmount(false);
                             window.set_selected_source(-1);
@@ -1483,7 +1479,12 @@ mod tests {
 
     #[test]
     fn ui_state_tracks_source_and_mount_capabilities() {
-        let mut state = UiState::new("disk.raw");
+        let mut state = UiState::new(
+            "disk.raw",
+            linuxfs_preview::localization::catalog(
+                linuxfs_preview::localization::UiLanguage::English,
+            ),
+        );
         assert_eq!(state.image_path, "disk.raw");
         assert!(!state.can_mount);
         state.set_compatible("ext4", "Raw image");
@@ -1514,7 +1515,12 @@ mod tests {
             mount_point: Some("L:".to_owned()),
             read_only: true,
         };
-        let mut state = UiState::new("");
+        let mut state = UiState::new(
+            "",
+            linuxfs_preview::localization::catalog(
+                linuxfs_preview::localization::UiLanguage::English,
+            ),
+        );
 
         state.set_source(&source);
 
