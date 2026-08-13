@@ -66,3 +66,10 @@ The implementation was committed and pushed as `373694c` (`1.6.2 build
   manifest when launched from this non-elevated shell (OS error 740).
 - `cargo build --release --workspace` — passed; the release executable is at
   `target/release/LinuxFSManager.exe`.
+
+## 2026-08-13 — packaging correction
+
+The release workflow now always copies the reviewed `winfsp-x64.dll` beside the
+executable and into the portable ZIP. `tools/package-release.ps1` searches the
+registered WinFsp installation or accepts `-WinFspDll`, then verifies both
+output locations before completing.

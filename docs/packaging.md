@@ -37,6 +37,17 @@ driver/framework prerequisite and may need a separate installation. A portable
 bundle must detect the missing prerequisite and provide the same remediation
 guidance rather than silently failing.
 
+Every portable package must place `winfsp-x64.dll` beside
+`LinuxFSManager.exe`. Use the repository script to build and verify the bundle:
+
+```powershell
+.\tools\package-release.ps1 -Tag portable -WinFspDll C:\path\to\winfsp-x64.dll
+```
+
+The script also searches the registered WinFsp installation and verifies that
+both the folder and ZIP contain the DLL. The DLL is a user-mode runtime asset;
+the WinFsp driver/framework prerequisite is still required separately.
+
 Do not bundle unreviewed WinFsp binaries or describe the application as fully
 standalone until WinFsp redistribution terms, Slint licensing, signing, and
 the selected installer have been reviewed. Packaging must not add a setting or
