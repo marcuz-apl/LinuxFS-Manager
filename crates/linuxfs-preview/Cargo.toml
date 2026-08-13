@@ -14,12 +14,13 @@ path = "src/main.rs"
 linuxfs-app = { path = "../linuxfs-app" }
 linuxfs-core = { path = "../linuxfs-core" }
 linuxfs-winfsp = { path = "../linuxfs-winfsp" }
-slint = "1.13"
+raw-window-handle = "0.6"
+slint = { version = "1.13", features = ["raw-window-handle-06"] }
 
 [target.'cfg(windows)'.dependencies]
 rfd = "0.15"
 winfsp = "0.13"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

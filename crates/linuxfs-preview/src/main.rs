@@ -48,8 +48,8 @@ slint::slint! {
 
                 VerticalBox {
                     spacing: 2px;
-                    Text { text: "LinuxFS Manager"; font-size: 25px; font-weight: 700; color: #102a43; }
-                    Text { text: "Read Linux filesystems safely on Windows"; font-size: 13px; color: #58718a; }
+                    Text { text: "LinuxFS Manager"; font-size: 25px; font-weight: 700; color: #17324d; }
+                    Text { text: "Read Linux filesystems safely on Windows"; font-size: 13px; color: #6b7c93; }
                 }
                 Rectangle { horizontal-stretch: 1; }
                 Button { width: 112px; text: "Scan Drives"; clicked => { root.scan_drives_clicked(); } }
@@ -69,20 +69,22 @@ slint::slint! {
 
                     Rectangle {
                         width: 316px;
-                        background: #102a43;
+                        background: #f7fafe;
                         border-radius: 14px;
+                        border-width: 1px;
+                        border-color: #e3edf7;
 
                         VerticalBox {
                             padding: 20px;
                             spacing: 8px;
-                            Text { text: "Sources"; font-size: 19px; font-weight: 700; color: #ffffff; }
-                            Text { text: "Partitions and image files"; font-size: 12px; color: #aec6d9; }
-                            Rectangle { height: 1px; background: #2a4963; }
+                            Text { text: "Sources"; font-size: 19px; font-weight: 700; color: #17324d; }
+                            Text { text: "Partitions and image files"; font-size: 12px; color: #71849a; }
+                            Rectangle { height: 1px; background: #e3edf7; }
                             Rectangle { height: 4px; }
 
                             if (root.source_names.length == 0) : Text {
                                 text: "Scan your drives or open an image to begin.";
-                                color: #b8ccdc;
+                                color: #71849a;
                                 wrap: word-wrap;
                             }
 
@@ -91,12 +93,12 @@ slint::slint! {
                                 for name[index] in root.source_names : Rectangle {
                                     height: 46px;
                                     border-radius: 8px;
-                                    background: root.selected_source == index ? #1e5c88 : #ffffff00;
+                                    background: root.selected_source == index ? #dbeafe : #ffffff00;
                                     Text {
                                         x: 12px;
                                         width: parent.width - 24px;
                                         text: name;
-                                        color: root.selected_source == index ? #ffffff : #d3e2ee;
+                                        color: root.selected_source == index ? #124f86 : #38536d;
                                         vertical-alignment: center;
                                         overflow: elide;
                                     }
@@ -111,27 +113,27 @@ slint::slint! {
                         padding: 28px;
                         spacing: 18px;
 
-                        Text { text: source_name; font-size: 24px; font-weight: 700; color: #102a43; overflow: elide; }
+                        Text { text: source_name; font-size: 24px; font-weight: 700; color: #17324d; overflow: elide; }
 
                         Rectangle {
                             vertical-stretch: 1;
-                            background: #f4f8fb;
+                            background: #f9fbfd;
                             border-radius: 12px;
                             border-width: 1px;
-                            border-color: #e2ebf2;
+                            border-color: #e6edf5;
 
                             VerticalBox {
                                 padding: 20px;
                                 spacing: 9px;
-                                Text { text: "Filesystem details"; font-size: 15px; font-weight: 700; color: #173b57; }
-                                Text { text: source_details; color: #4f687d; wrap: word-wrap; }
+                                Text { text: "Filesystem details"; font-size: 15px; font-weight: 700; color: #17324d; }
+                                Text { text: source_details; color: #526a83; wrap: word-wrap; }
                                 Rectangle { vertical-stretch: 1; }
                             }
                         }
 
                         VerticalBox {
                             spacing: 7px;
-                            Text { text: "Open a filesystem image"; font-size: 14px; font-weight: 700; color: #173b57; }
+                            Text { text: "Open a filesystem image"; font-size: 14px; font-weight: 700; color: #17324d; }
                             LineEdit { height: 40px; text <=> root.image_path; placeholder-text: "Image path (or use Open Image…)"; }
                         }
 
@@ -150,22 +152,24 @@ slint::slint! {
 
             Rectangle {
                 height: 66px;
-                background: #102a43;
+                background: #edf5fb;
                 border-radius: 12px;
+                border-width: 1px;
+                border-color: #d8e5f0;
 
                 Rectangle {
                     x: 18px;
                     y: 22px;
                     width: 9px;
                     height: 22px;
-                    background: #48b981;
+                    background: #267d53;
                     border-radius: 5px;
                 }
                 Text {
                     x: 42px;
                     y: 8px;
                     text: "READ ONLY — source filesystems are never modified.";
-                    color: #ffffff;
+                    color: #245f47;
                     font-size: 13px;
                     font-weight: 700;
                 }
@@ -174,7 +178,7 @@ slint::slint! {
                     y: 34px;
                     width: parent.width - 62px;
                     text: engine_status + "  ·  " + status;
-                    color: #b7cede;
+                    color: #46627a;
                     font-size: 12px;
                     overflow: elide;
                 }
@@ -410,6 +414,32 @@ fn center_window(window: &slint::Window) {
 #[cfg(windows)]
 fn center_main_window(window: &MainWindow) {
     center_window(window.window());
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn enable_dark_caption(window: &slint::Window) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
+
+    let window_handle = window.window_handle();
+    let Ok(native_handle) = window_handle.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(native_handle) = native_handle.as_raw() else {
+        return;
+    };
+    let enabled: i32 = 1;
+    // SAFETY: `native_handle.hwnd` belongs to the live Slint window, and the
+    // pointer/size pair describes the local `enabled` i32 for this call only.
+    let _ = unsafe {
+        DwmSetWindowAttribute(
+            native_handle.hwnd.get() as *mut std::ffi::c_void,
+            linuxfs_preview::dark_caption_attribute(),
+            (&enabled as *const i32).cast(),
+            u32::try_from(std::mem::size_of_val(&enabled)).unwrap_or(4),
+        )
+    };
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -689,6 +719,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let window = MainWindow::new()?;
     window.show()?;
     center_main_window(&window);
+    let dark_caption_window = window.as_weak();
+    slint::Timer::single_shot(Duration::from_millis(0), move || {
+        if let Some(window) = dark_caption_window.upgrade() {
+            enable_dark_caption(window.window());
+        }
+    });
     window.set_app_version(env!("LINUXFS_MANAGER_VERSION").into());
     window.set_engine_status(engine_status_text(&assessment).into());
     let initial_path = image.unwrap_or_default();

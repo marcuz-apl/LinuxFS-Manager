@@ -1,4 +1,9 @@
 #[cfg(windows)]
+pub const fn dark_caption_attribute() -> u32 {
+    20
+}
+
+#[cfg(windows)]
 pub fn centered_window_position(
     window_size: (i32, i32),
     work_area: (i32, i32, i32, i32),
@@ -9,6 +14,17 @@ pub fn centered_window_position(
         left + (work_width - window_width).max(0) / 2,
         top + (work_height - window_height).max(0) / 2,
     )
+}
+
+#[cfg(windows)]
+#[cfg(test)]
+mod dark_caption_tests {
+    use super::dark_caption_attribute;
+
+    #[test]
+    fn dark_caption_attribute_is_immersive_dark_mode() {
+        assert_eq!(dark_caption_attribute(), 20);
+    }
 }
 
 #[cfg(all(test, windows))]

@@ -9,6 +9,19 @@
 - **Desktop polish:** Added the app icon, larger default window, About dialog, version propagation from `VERSION`, and the polished source-selection UI.
 - **Current extension:** Routed all consumers through a backend registry and added SquashFS plus bounded XFS image support without adding source writes.
 
+## 2026-08-13 — light workspace palette and dark native caption
+
+The high-contrast navy source rail and status strip were replaced with the
+calmer light-blue surfaces used in 1.7.1. The current 1200×820 workspace,
+product icon, source-selection affordance, and primary Mount action remain in
+place. On supported Windows versions, the app now requests a dark native title
+bar with Windows-provided white caption text and controls; native drag, resize,
+minimize, maximize, and close behavior are unchanged.
+
+This is presentation-only work. The 1.7.6 mount lifecycle safeguards,
+source-retention behavior, read-only filesystem boundary, and dynamic free
+drive-letter selection are unchanged.
+
 ## 2026-08-13 — file-manager workspace polish
 
 The main Slint window now uses a dark navy **Sources** rail for detected partitions and image files, plus a bright workspace for the selected source, filesystem details, image path, and mount commands. The selected source state remains backed by the existing source model and callback; scanning, opening images, mounting, unmounting, Explorer access, and details behavior are unchanged.
