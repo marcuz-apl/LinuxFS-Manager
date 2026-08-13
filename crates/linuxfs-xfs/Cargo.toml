@@ -1,18 +1,13 @@
 [package]
-name = "linuxfs-cli"
+name = "linuxfs-xfs"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 publish = false
 
-[[bin]]
-name = "linuxfs"
-path = "src/main.rs"
-
 [dependencies]
 linuxfs-core = { path = "../linuxfs-core" }
-linuxfs-backends = { path = "../linuxfs-backends" }
-linuxfs-storage = { path = "../linuxfs-storage" }
+xfs-core = "0.1.6"
 
 [lints]
 workspace = true

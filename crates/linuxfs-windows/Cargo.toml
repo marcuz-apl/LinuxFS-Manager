@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 linuxfs-core = { path = "../linuxfs-core" }
-linuxfs-ext = { path = "../linuxfs-ext" }
+linuxfs-backends = { path = "../linuxfs-backends" }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO"] }

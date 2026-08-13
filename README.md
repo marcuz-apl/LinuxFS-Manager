@@ -1,7 +1,8 @@
 # LinuxFS Manager
 
 LinuxFS Manager is a Windows application for safely reading Linux Ext2, Ext3,
-and Ext4 filesystems from physical disks, partitions, and raw disk images.
+Ext4, SquashFS, and supported XFS images from physical disks, partitions, and
+raw disk images.
 
 ## Current status
 
@@ -14,8 +15,8 @@ path, and a small inspection CLI:
 - source-integrity regression tests that compare image bytes before and after inspection;
 - structured errors for malformed or unsupported partition metadata;
 - read-only filesystem metadata and partition-backed image mounting;
-- Ext directory enumeration, file streaming, symlink reads, and filesystem
-  capacity metadata;
+- Ext, SquashFS, and XFS read-only directory enumeration, file streaming, and
+  symlink reads where the backend can safely provide them;
 - a Slint desktop shell connected to Windows source discovery and the
   read-only mount service;
 - `linuxfs inspect`, `linuxfs ls`, and `linuxfs cat` for scripted image access.
@@ -23,6 +24,15 @@ path, and a small inspection CLI:
 Physical-device access and WinFsp mounting require Windows and the WinFsp
 runtime. The installer/release pipeline remains separate from the tested core;
 see [docs/packaging.md](docs/packaging.md) for the prerequisite contract.
+
+SquashFS is streamed through the bounded block-reader interface. The current
+XFS reader is deliberately limited to sources up to 512 MiB because its
+upstream parser requires a whole image in memory; larger XFS physical volumes
+are identified as unsupported rather than materialized unsafely. XFS file reads
+are additionally capped at 64 MiB until the parser exposes streaming extents.
+
+Implementation decisions and validation notes are recorded in
+[docs/Dev-logs.md](docs/Dev-logs.md).
 
 ## V1 safety promise
 

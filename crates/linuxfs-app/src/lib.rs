@@ -1,4 +1,4 @@
-use linuxfs_core::FileKind;
+use linuxfs_core::{FileKind, ReadOnlyFilesystem};
 
 #[cfg(windows)]
 use std::path::PathBuf;
@@ -576,10 +576,10 @@ impl SourceProvider for ImageSourceProvider {
     }
 
     fn open_image(&mut self, path: &str) -> linuxfs_core::Result<SourceViewModel> {
+        use linuxfs_backends::ReadOnlyBackend;
         use linuxfs_core::{
             BlockGeometry, BlockReader, PartitionReader, SourceLayout, discover_layout,
         };
-        use linuxfs_ext::ExtReadOnlyBackend;
         use linuxfs_storage::RawImageReader;
         use std::sync::Arc;
 
@@ -588,7 +588,7 @@ impl SourceProvider for ImageSourceProvider {
         let layout = discover_layout(reader.as_ref(), BlockGeometry::raw_image_512())?;
         match layout {
             SourceLayout::DirectImage => {
-                let backend = ExtReadOnlyBackend::open(Arc::clone(&reader))?;
+                let backend = ReadOnlyBackend::open(Arc::clone(&reader))?;
                 let info = backend.info()?;
                 Ok(self.source_from_info(path, source_size, path.to_owned(), None, info))
             }
@@ -606,7 +606,7 @@ impl SourceProvider for ImageSourceProvider {
                             continue;
                         }
                     };
-                    match ExtReadOnlyBackend::open(Arc::clone(&view)) {
+                    match ReadOnlyBackend::open(Arc::clone(&view)) {
                         Ok(backend) => {
                             let info = backend.info()?;
                             return Ok(self.source_from_info(
@@ -623,7 +623,7 @@ impl SourceProvider for ImageSourceProvider {
                 Err(last_error.unwrap_or_else(|| {
                     linuxfs_core::Error::new(
                         linuxfs_core::ErrorCategory::UnsupportedFilesystem,
-                        "no supported Ext filesystem found in image partitions",
+                        "no supported filesystem found in image partitions",
                     )
                 }))
             }
@@ -660,7 +660,7 @@ impl SourceProvider for WindowsSourceProvider {
         if physical.is_empty() {
             return Err(linuxfs_core::Error::new(
                 linuxfs_core::ErrorCategory::UnsupportedFilesystem,
-                "no supported Ext filesystem was found on physical disks or Windows volume devices",
+                "no supported filesystem was found on physical disks or Windows volume devices",
             ));
         }
         Ok(physical
@@ -751,7 +751,7 @@ pub struct WindowsImageMountService {
     mounts: std::collections::HashMap<
         SourceId,
         linuxfs_winfsp::MountManager<
-            linuxfs_winfsp::native::NativeMountHost<linuxfs_ext::ExtReadOnlyBackend>,
+            linuxfs_winfsp::native::NativeMountHost<linuxfs_backends::ReadOnlyBackend>,
         >,
     >,
 }
@@ -791,8 +791,8 @@ impl Drop for WindowsImageMountService {
 #[cfg(windows)]
 impl MountService for WindowsImageMountService {
     fn mount(&mut self, source: &SourceViewModel) -> linuxfs_core::Result<String> {
+        use linuxfs_backends::ReadOnlyBackend;
         use linuxfs_core::{BlockReader, PartitionReader};
-        use linuxfs_ext::ExtReadOnlyBackend;
         use linuxfs_storage::RawImageReader;
         use linuxfs_winfsp::{MountManager, native::NativeMountHost};
         use std::sync::Arc;
@@ -828,7 +828,7 @@ impl MountService for WindowsImageMountService {
             )?),
             None => image_reader,
         };
-        let backend = ExtReadOnlyBackend::open(reader)?;
+        let backend = ReadOnlyBackend::open(reader)?;
         let global_mount_point = format!(r"\\.\{}", mount_point);
         let host = NativeMountHost::new(backend, "LinuxFS Manager", global_mount_point).map_err(
             |error| {

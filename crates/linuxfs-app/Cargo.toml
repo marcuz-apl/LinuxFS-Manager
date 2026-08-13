@@ -7,6 +7,7 @@ publish = false
 
 [dependencies]
 linuxfs-core = { path = "../linuxfs-core" }
+linuxfs-backends = { path = "../linuxfs-backends" }
 linuxfs-config = { path = "../linuxfs-config" }
 linuxfs-ext = { path = "../linuxfs-ext" }
 linuxfs-storage = { path = "../linuxfs-storage" }

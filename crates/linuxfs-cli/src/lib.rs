@@ -4,11 +4,11 @@ use std::{
     sync::Arc,
 };
 
+use linuxfs_backends::ReadOnlyBackend;
 use linuxfs_core::{
     BlockGeometry, BlockReader, DirectoryEntry, Error, ErrorCategory, FsPath, ReadOnlyFilesystem,
     Result, SourceLayout, discover_layout,
 };
-use linuxfs_ext::ExtReadOnlyBackend;
 use linuxfs_storage::RawImageReader;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,7 +93,7 @@ pub fn run(command: Command, output: &mut impl Write) -> Result<()> {
 }
 
 struct OpenFilesystem {
-    backend: ExtReadOnlyBackend,
+    backend: ReadOnlyBackend,
 }
 
 fn open_filesystem(path: &Path) -> Result<OpenFilesystem> {
@@ -101,7 +101,7 @@ fn open_filesystem(path: &Path) -> Result<OpenFilesystem> {
     let layout = discover_layout(reader.as_ref(), BlockGeometry::raw_image_512())?;
     match layout {
         SourceLayout::DirectImage => Ok(OpenFilesystem {
-            backend: ExtReadOnlyBackend::open(reader)?,
+            backend: ReadOnlyBackend::open(reader)?,
         }),
         SourceLayout::Mbr { partitions } | SourceLayout::Gpt { partitions } => {
             let mut last_error = None;
@@ -117,7 +117,7 @@ fn open_filesystem(path: &Path) -> Result<OpenFilesystem> {
                         continue;
                     }
                 };
-                match ExtReadOnlyBackend::open(view) {
+                match ReadOnlyBackend::open(view) {
                     Ok(backend) => return Ok(OpenFilesystem { backend }),
                     Err(error) => last_error = Some(error),
                 }
@@ -125,7 +125,7 @@ fn open_filesystem(path: &Path) -> Result<OpenFilesystem> {
             Err(last_error.unwrap_or_else(|| {
                 Error::new(
                     ErrorCategory::UnsupportedFilesystem,
-                    "no supported Ext filesystem found in image partitions",
+                    "no supported filesystem found in image partitions",
                 )
             }))
         }

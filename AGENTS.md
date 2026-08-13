@@ -8,7 +8,7 @@ Read `PRD.md` before planning or modifying product behavior.
 
 ## 1. Mission
 
-Build a safe Windows application that gives users **read-only** access to Linux Ext2, Ext3, and Ext4 filesystems from:
+Build a safe Windows application that gives users **read-only** access to Linux Ext2, Ext3, Ext4, SquashFS, and bounded XFS image files from:
 
 - physical disks/partitions, and
 - raw filesystem/disk image files.
@@ -107,6 +107,8 @@ Do not expose source-side operations such as:
 - Ext2
 - Ext3
 - Ext4
+- SquashFS
+- bounded XFS image support
 - read-only raw physical disk access
 - GPT
 - MBR
@@ -130,7 +132,7 @@ Do not implement unless the PRD is explicitly revised:
 - filesystem repair
 - file recovery/undelete
 - custom Windows kernel filesystem driver
-- XFS mounting
+- unbounded/streaming XFS mounting until a bounded random-access reader is available
 - Btrfs mounting
 - F2FS mounting
 - ZFS mounting
@@ -185,7 +187,7 @@ Read-only BlockReader
 Filesystem registry
     ↓
 ReadOnlyFilesystem
-    └── Ext backend (V1)
+    └── Read-only filesystem backends (Ext, SquashFS, bounded XFS images)
     ↓
 WinFsp adapter
 ```
@@ -238,7 +240,8 @@ Do not leak WinFsp types throughout the parser/core crates.
 
 ## 7. Pluggable Filesystem Design
 
-Although V1 implements Ext only, design against a generic read-only interface.
+V1 uses the generic read-only interface for Ext, SquashFS, and bounded XFS image
+backends. Future backends must use the same boundary.
 
 Conceptually:
 
@@ -252,13 +255,13 @@ pub trait ReadOnlyFilesystem {
 }
 ```
 
-Do not add XFS/Btrfs/F2FS implementation code merely to prove the abstraction.
+Do not add Btrfs/F2FS implementation code merely to prove the abstraction.
 
 A good abstraction should allow those backends later without speculative implementation today.
 
 ---
 
-## 8. Ext Backend Rules
+## 8. Read-only Filesystem Backend Rules
 
 The preferred initial approach is to evaluate/wrap a maintained Rust read-only parser such as `ext4-view`.
 
@@ -650,7 +653,7 @@ Unless the repository already establishes another plan:
 4. raw image reader
 5. GPT/MBR discovery
 6. filesystem probe registry
-7. Ext read-only backend
+7. Read-only filesystem backends
 8. image-based integration tests
 9. Windows physical-device reader
 10. WinFsp adapter
@@ -669,7 +672,6 @@ Do not start with physical-disk mounting before the image-based core is tested.
 
 The architecture anticipates:
 
-- XFS
 - Btrfs
 - F2FS
 - LVM
@@ -678,7 +680,9 @@ The architecture anticipates:
 - optional indexing
 - possibly write support someday
 
-Do not implement these opportunistically.
+Do not implement these opportunistically. Bounded XFS image support is an
+explicit approved exception; streaming XFS physical-volume support remains
+future work.
 
 Especially:
 
@@ -703,7 +707,7 @@ For ambiguity, prefer these defaults:
 | UI thread for disk operations? | No |
 | Image or physical media first for tests? | Image |
 | Ext-specific API exposed to UI? | No |
-| Add future filesystem backend now? | No |
+| Add filesystem backend now? | Only when explicitly approved and kept read-only |
 | Unsure whether an API is read-only? | Verify before use |
 
 ---
@@ -716,4 +720,4 @@ Surface the conflict and preserve the V1 safety model.
 
 The defining V1 promise is:
 
-> **LinuxFS Manager lets Windows users read Linux Ext2/Ext3/Ext4 filesystems without modifying them.**
+> **LinuxFS Manager lets Windows users read supported Linux filesystems without modifying them.**

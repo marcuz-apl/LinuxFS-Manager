@@ -1,6 +1,6 @@
 use linuxfs_core::{
     BlockGeometry, BlockReader, Error, ErrorCategory, FilesystemInfo, Partition, PartitionReader,
-    Result, SourceLayout, discover_layout, validate_read_range,
+    ReadOnlyFilesystem, Result, SourceLayout, discover_layout, validate_read_range,
 };
 use std::{
     collections::VecDeque,
@@ -58,7 +58,7 @@ impl PhysicalScanReport {
     pub fn render(&self) -> String {
         let mut rendered = String::from("LinuxFS Manager physical scan diagnostics\n");
         rendered.push_str(&format!(
-            "Discovered Ext partitions: {}\n",
+            "Discovered supported filesystem partitions: {}\n",
             self.partitions.len()
         ));
         for diagnostic in &self.diagnostics {
@@ -70,7 +70,7 @@ impl PhysicalScanReport {
     }
 }
 
-/// Probes a physical disk using only bounded reads and returns supported Ext partitions.
+/// Probes a physical disk using only bounded reads and returns supported filesystem partitions.
 pub fn probe_physical_partitions(
     disk_index: u32,
     reader: Arc<dyn BlockReader>,
@@ -139,11 +139,11 @@ fn probe_physical_partitions_with_diagnostics(
                 continue;
             }
         };
-        let backend = match linuxfs_ext::ExtReadOnlyBackend::open(view) {
+        let backend = match linuxfs_backends::ReadOnlyBackend::open(view) {
             Ok(backend) => backend,
             Err(error) => {
                 diagnostics.push(format!(
-                    "PhysicalDrive{disk_index}: partition {} Ext probe failed: {error}",
+                    "PhysicalDrive{disk_index}: partition {} filesystem probe failed: {error}",
                     partition.number
                 ));
                 partition_failures.push(format!("partition {}: {error}", partition.number));
@@ -151,8 +151,9 @@ fn probe_physical_partitions_with_diagnostics(
             }
         };
         diagnostics.push(format!(
-            "PhysicalDrive{disk_index}: partition {} Ext probe succeeded",
-            partition.number
+            "PhysicalDrive{disk_index}: partition {} filesystem probe succeeded ({})",
+            partition.number,
+            backend.kind()
         ));
         results.push(PhysicalPartitionInfo {
             disk_index,
@@ -165,7 +166,7 @@ fn probe_physical_partitions_with_diagnostics(
         return Err(Error::new(
             ErrorCategory::UnsupportedFilesystem,
             format!(
-                "no supported Ext partition; {}",
+                "no supported filesystem partition; {}",
                 partition_failures.join("; ")
             ),
         ));
@@ -186,7 +187,7 @@ pub fn discover_volume_partitions() -> Vec<PhysicalPartitionInfo> {
                 size_bytes,
                 cache: Mutex::new(PhysicalReadCache::default()),
             }) as Arc<dyn BlockReader>;
-            let backend = linuxfs_ext::ExtReadOnlyBackend::open(reader).ok()?;
+            let backend = linuxfs_backends::ReadOnlyBackend::open(reader).ok()?;
             Some(PhysicalPartitionInfo {
                 disk_index: u32::MAX,
                 source_path: path,
@@ -244,9 +245,9 @@ pub fn scan_physical_partitions(max_index: u32) -> PhysicalScanReport {
         };
         let reader = Arc::new(reader) as Arc<dyn BlockReader>;
         match probe_physical_partitions_with_diagnostics(index, reader, &mut report.diagnostics) {
-            Ok(partitions) if partitions.is_empty() => report
-                .diagnostics
-                .push(format!("PhysicalDrive{index}: no supported Ext partition")),
+            Ok(partitions) if partitions.is_empty() => report.diagnostics.push(format!(
+                "PhysicalDrive{index}: no supported filesystem partition"
+            )),
             Ok(mut partitions) => report.partitions.append(&mut partitions),
             Err(error) => report
                 .diagnostics
@@ -643,6 +644,6 @@ mod tests {
         let rendered = report.render();
         assert!(rendered.contains("LinuxFS Manager physical scan diagnostics"));
         assert!(rendered.contains("PhysicalDrive3: open failed: Access is denied"));
-        assert!(rendered.contains("Discovered Ext partitions: 0"));
+        assert!(rendered.contains("Discovered supported filesystem partitions: 0"));
     }
 }

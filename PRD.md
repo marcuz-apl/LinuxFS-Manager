@@ -2,7 +2,7 @@
 
 **Product:** LinuxFS Manager  
 **Target platform:** Windows 10/11 x64  
-**V1 scope:** Read-only access to Ext2, Ext3, and Ext4 filesystems from physical disks/partitions and filesystem image files  
+**V1 scope:** Read-only access to Ext2/3/4 and SquashFS filesystems from physical disks/partitions and filesystem image files, plus bounded XFS image support
 **Primary implementation language:** Rust  
 **Desktop UI:** Slint (Rust-native declarative UI)  
 **Windows filesystem integration:** WinFsp user-mode filesystem  
@@ -15,9 +15,9 @@
 
 LinuxFS Manager is a small native Windows desktop application that allows users to inspect and mount Linux-native filesystems safely from Windows.
 
-V1 focuses exclusively on **read-only Ext2/Ext3/Ext4 access**. Users can discover Linux partitions attached to the Windows machine or open supported raw/image files, inspect filesystem information, and mount a supported filesystem through WinFsp so that files can be browsed and copied using Windows Explorer and normal Windows applications.
+V1 focuses exclusively on **read-only Ext2/Ext3/Ext4 and SquashFS access**, with bounded XFS support for image-sized sources. Users can discover Linux partitions attached to the Windows machine or open supported raw/image files, inspect filesystem information, and mount a supported filesystem through WinFsp so that files can be browsed and copied using Windows Explorer and normal Windows applications.
 
-The product must never write to an Ext2/Ext3/Ext4 filesystem in V1.
+The product must never write to any source filesystem in V1.
 
 The architecture must be generic enough to add other read-only Linux filesystem backends later, such as XFS, Btrfs, and F2FS, without redesigning the application shell.
 
@@ -68,7 +68,7 @@ The following are explicitly outside V1:
 - LVM activation.
 - LUKS decryption.
 - Linux MD RAID assembly.
-- Btrfs, XFS, F2FS, ZFS, JFS, or ReiserFS mounting.
+    - Btrfs, F2FS, ZFS, JFS, or ReiserFS mounting.
 - Network filesystems.
 - A background indexing/search database.
 - A custom Windows kernel-mode filesystem driver.
@@ -195,7 +195,7 @@ As a user, I want a useful explanation when LinuxFS Manager cannot mount somethi
 - LVM physical volume
 - unsupported Ext incompatible feature
 - corrupt Ext metadata
-- unsupported filesystem such as XFS/Btrfs
+    - unsupported filesystem such as Btrfs or an XFS source above the safe image limit
 - inaccessible device
 - insufficient privileges
 
@@ -255,19 +255,25 @@ Filesystem probing must:
 - return an explicit confidence/result type
 - never mount an unknown filesystem based only on a weak heuristic
 
-### FR-05 — Ext backend
+### FR-05 — Read-only filesystem backends
 
-V1 shall implement one production filesystem backend:
+V1 shall implement a production read-only backend registry with:
 
 `ExtReadOnlyBackend`
+`SquashfsReadOnlyBackend`
+`XfsReadOnlyBackend` (bounded image sources)
 
 Target compatibility:
 
 - Ext2
 - Ext3
 - Ext4
+- SquashFS 4.0
+- XFS images up to the backend's documented 512 MiB safety limit
 
-The backend may initially use a maintained Rust read-only Ext implementation such as `ext4-view`, wrapped behind LinuxFS Manager interfaces.
+The backends may wrap maintained Rust readers behind LinuxFS Manager interfaces.
+SquashFS must use bounded random reads. XFS must fail closed for sources above
+the safe materialization limit until a streaming reader is available.
 
 Dependency behavior must be validated against the application's Ext3 test corpus rather than assuming full Ext3 compatibility from an Ext2/Ext4 claim.
 
@@ -903,7 +909,7 @@ V1 is considered complete only when:
 11. Source images remain byte-for-byte unchanged after tests.
 12. Unsupported incompatible features fail closed.
 13. Corrupt test images do not crash or hang the application.
-14. Physical Ext partitions can be mounted read-only on supported Windows systems.
+14. Physical supported partitions can be mounted read-only on supported Windows systems.
 15. Mounts can be cleanly removed.
 16. The app does not require SQLite or another database.
 17. Configuration persists in a small versioned file.
@@ -919,7 +925,7 @@ V1 is considered complete only when:
 
 Potential incremental additions:
 
-- richer Ext feature coverage
+- richer Ext/SquashFS/XFS feature coverage
 - improved diagnostics
 - direct file export from application UI
 - checksums for copied files
@@ -928,7 +934,6 @@ Potential incremental additions:
 
 ### V2 candidates
 
-- XFS read-only backend
 - Btrfs read-only backend
 - F2FS read-only backend
 - LVM discovery/activation in a carefully isolated read-only path
@@ -953,7 +958,7 @@ It requires a separate PRD, threat/safety analysis, journaling/recovery design, 
 | GUI | Slint declarative UI |
 | UI bridge | Rust models and callbacks |
 | FS bridge | WinFsp user-mode filesystem |
-| Filesystems | Ext2/Ext3/Ext4 |
+| Filesystems | Ext2/Ext3/Ext4, SquashFS, bounded XFS images |
 | Access mode | Read-only, mandatory |
 | Physical partitions | Yes |
 | Raw image files | Yes |
