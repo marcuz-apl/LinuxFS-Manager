@@ -52,8 +52,8 @@ write API is introduced.
 - XFS reader API and its whole-image limitation: [`xfs-core`](https://docs.rs/xfs-core/latest/xfs/)
 - XFS on-disk format reference: [Linux XFS format header](https://github.com/torvalds/linux/blob/master/fs/xfs/libxfs/xfs_format.h)
 
-The final entry for this change will record the exact test/build output and
-commit hash after implementation is verified.
+The implementation was committed and pushed as `373694c` (`1.6.2 build
+2026-08-13-1001`).
 
 ### Verification result
 
@@ -64,3 +64,5 @@ commit hash after implementation is verified.
 - `cargo test --workspace` — all tests before the preview binary passed; the
   Windows preview executable was blocked by the embedded `requireAdministrator`
   manifest when launched from this non-elevated shell (OS error 740).
+- `cargo build --release --workspace` — passed; the release executable is at
+  `target/release/LinuxFSManager.exe`.
