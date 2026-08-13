@@ -26,12 +26,11 @@ letters, and raw external errors deliberately remain unchanged. Arabic is
 excluded from this release because right-to-left layout support has not been
 designed or validated.
 
-The portable package also carries four region-specific Noto Sans CJK subset
-fonts: Simplified Chinese, Traditional Chinese, Japanese, and Korean. Together
-they add about 22 MiB instead of roughly 60–80 MiB for full CJK families. The
-application registers them privately at runtime, including in the WinFsp
-prerequisite screen; they do not install or modify system fonts. Their SIL Open
-Font License 1.1 text is included in the `fonts\` folder.
+Simplified Chinese, Traditional Chinese, Japanese, and Korean now use Windows'
+native UI fonts: Microsoft YaHei UI, Microsoft JhengHei UI, Yu Gothic UI, and
+Malgun Gothic. The portable package does not carry third-party font files. If
+the selected native font is absent, the header provides an official Noto CJK
+release-page link so the user may install a fallback independently.
 
 ## 2026-08-13 — light workspace palette and dark native caption
 

@@ -368,10 +368,11 @@ The portable package shall include one UTF-8 text file per supported language
 under `locales\`. The application shall validate its declared language tag and
 fall back to the bundled catalog if a text file is unavailable or malformed.
 
-The portable package shall include open-licensed, region-specific CJK fallback
-fonts for Simplified Chinese, Traditional Chinese, Japanese, and Korean. The
-application may register them privately for rendering but must not install,
-replace, or modify system fonts.
+The application shall prefer Windows' native CJK UI fonts for Simplified
+Chinese, Traditional Chinese, Japanese, and Korean. If a selected native font
+is unavailable, the UI shall offer a link to an official third-party font
+release page. The application shall not bundle, install, replace, or modify
+system fonts.
 
 Filesystem names, labels, paths, UUIDs, drive letters, and raw external error
 details remain exact values. Right-to-left languages are outside this release

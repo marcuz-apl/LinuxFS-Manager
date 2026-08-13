@@ -17,6 +17,8 @@ slint::slint! {
         in-out property <string> engine_status: "WinFsp engine: checking…";
         in-out property <string> app_version: "";
         in-out property <string> ui_font_family: "Segoe UI";
+        in-out property <bool> show_font_download: false;
+        in-out property <string> font_download_text: "Download CJK font";
         in-out property <string> source_name: "No source loaded";
         in-out property <string> source_details: "Open a raw Linux filesystem image to inspect it.";
         in-out property <string> image_path: "";
@@ -55,6 +57,7 @@ slint::slint! {
         callback open_image_clicked();
         callback source_selected(int);
         callback language_selected(string);
+        callback font_download_clicked();
 
         VerticalBox {
             padding: 20px;
@@ -78,6 +81,7 @@ slint::slint! {
                 }
                 Rectangle { horizontal-stretch: 1; }
                 ComboBox { width: 190px; model: root.language_options; current-index: root.selected_language_index; selected(value) => { root.language_selected(value); } }
+                if (root.show_font_download) : Button { width: 148px; text: root.font_download_text; clicked => { root.font_download_clicked(); } }
                 Button { width: 132px; text: root.scan_drives_text; clicked => { root.scan_drives_clicked(); } }
                 Button { width: 142px; text: root.open_image_text; clicked => { root.open_image_clicked(); } }
                 Button { width: 96px; text: root.about_text; clicked => { about_popup.show(); } }
@@ -401,6 +405,8 @@ fn apply_localized_copy(
 ) {
     let copy = catalog.copy;
     window.set_ui_font_family(copy.language.default_font_family().into());
+    window.set_show_font_download(needs_cjk_font_download(copy.language));
+    window.set_font_download_text(copy.cjk_font_download_text().into());
     window.set_app_title(catalog.text("app_title", copy.app_title).into());
     window.set_app_subtitle(catalog.text("app_subtitle", copy.app_subtitle).into());
     window.set_scan_drives_text(catalog.text("scan_drives", copy.scan_drives).into());
@@ -514,33 +520,14 @@ fn packaged_locales_directory() -> std::path::PathBuf {
 }
 
 #[cfg(windows)]
-fn packaged_fonts_directory() -> std::path::PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(|parent| parent.join("fonts")))
-        .unwrap_or_else(|| std::path::PathBuf::from("fonts"))
-}
-
-#[cfg(windows)]
-fn register_packaged_fonts(directory: &std::path::Path) {
-    use slint::fontique_010::fontique;
-    use std::sync::Arc;
-
-    let mut collection = slint::fontique_010::shared_collection();
-    for language in [
-        linuxfs_preview::localization::UiLanguage::ChineseSimplified,
-        linuxfs_preview::localization::UiLanguage::ChineseTraditional,
-        linuxfs_preview::localization::UiLanguage::Japanese,
-        linuxfs_preview::localization::UiLanguage::Korean,
-    ] {
-        let Some(file) = language.bundled_font_file() else {
-            continue;
-        };
-        let Ok(data) = std::fs::read(directory.join(file)) else {
-            continue;
-        };
-        let _ = collection.register_fonts(fontique::Blob::new(Arc::new(data)), None);
-    }
+fn needs_cjk_font_download(language: linuxfs_preview::localization::UiLanguage) -> bool {
+    let windows_directory = std::env::var_os("WINDIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Windows"));
+    linuxfs_preview::localization::needs_cjk_font_download_in(
+        language,
+        &windows_directory.join("Fonts"),
+    )
 }
 
 fn start_pending_operation<T>(
@@ -748,15 +735,42 @@ fn open_winfsp_download_page() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[cfg(windows)]
+#[allow(unsafe_code)]
+fn open_noto_cjk_download_page() -> Result<(), Box<dyn std::error::Error>> {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let url: Vec<u16> = "https://github.com/notofonts/noto-cjk/releases/latest"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let operation: Vec<u16> = "open".encode_utf16().chain(std::iter::once(0)).collect();
+    // SAFETY: the operation and URL are owned, NUL-terminated UTF-16 buffers. ShellExecuteW
+    // is used only to request the user's configured browser open the official Noto CJK page.
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            url.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if (result as isize) <= 32 {
+        return Err("Windows could not open the official Noto CJK release page".into());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
 fn run_prerequisite_gate(
     initial_assessment: &linuxfs_winfsp::WinFspAssessment,
     catalog: &linuxfs_preview::localization::LocalizedCatalog,
-    fonts_directory: &std::path::Path,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     use std::sync::{Arc, Mutex};
 
     let window = PrerequisiteWindow::new()?;
-    register_packaged_fonts(fonts_directory);
     apply_prerequisite_copy(&window, catalog);
     let initial_state = PrerequisiteState::from_assessment(initial_assessment);
     window.set_requirement_message(initial_state.message.into());
@@ -904,7 +918,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let windows_locale = windows_user_locale();
     let resolved_language = resolve_language(config.ui_language.as_deref(), &windows_locale);
     let locales_directory = packaged_locales_directory();
-    let fonts_directory = packaged_fonts_directory();
     let localized_catalog = load_catalog(resolved_language, &locales_directory);
     let copy = localized_catalog.copy;
     let selected_language_index = config
@@ -915,9 +928,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut assessment = linuxfs_winfsp::assess_winfsp();
     let _ = linuxfs_app::runtime::record_winfsp_assessment(&assessment);
-    if !assessment.is_ready()
-        && !run_prerequisite_gate(&assessment, &localized_catalog, &fonts_directory)?
-    {
+    if !assessment.is_ready() && !run_prerequisite_gate(&assessment, &localized_catalog)? {
         return Ok(());
     }
     assessment = linuxfs_winfsp::assess_winfsp();
@@ -942,7 +953,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     linuxfs_winfsp::prepare_runtime()?;
     let _winfsp = winfsp::winfsp_init()?;
     let window = MainWindow::new()?;
-    register_packaged_fonts(&fonts_directory);
     apply_localized_copy(&window, &localized_catalog);
     window.set_selected_language_index(selected_language_index);
     window.show()?;
@@ -964,6 +974,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pending = Arc::new(Mutex::new(None::<PendingOperation>));
     let config = Arc::new(Mutex::new(config));
     let active_copy = Arc::new(Mutex::new(copy));
+
+    let weak = window.as_weak();
+    window.on_font_download_clicked(move || {
+        if let Err(error) = open_noto_cjk_download_page()
+            && let Some(window) = weak.upgrade()
+        {
+            window.set_status(format!("Could not open the CJK font download page: {error}").into());
+        }
+    });
 
     let weak = window.as_weak();
     let config_for_language = Arc::clone(&config);

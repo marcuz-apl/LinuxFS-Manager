@@ -87,23 +87,32 @@ impl UiLanguage {
 
     pub const fn default_font_family(self) -> &'static str {
         match self {
-            Self::ChineseSimplified => "Noto Sans SC",
-            Self::ChineseTraditional => "Noto Sans TC",
-            Self::Japanese => "Noto Sans JP",
-            Self::Korean => "Noto Sans KR",
+            Self::ChineseSimplified => "Microsoft YaHei UI",
+            Self::ChineseTraditional => "Microsoft JhengHei UI",
+            Self::Japanese => "Yu Gothic UI",
+            Self::Korean => "Malgun Gothic",
             _ => "Segoe UI",
         }
     }
 
-    pub const fn bundled_font_file(self) -> Option<&'static str> {
+    pub const fn windows_font_file(self) -> Option<&'static str> {
         match self {
-            Self::ChineseSimplified => Some("NotoSansSC-Regular.otf"),
-            Self::ChineseTraditional => Some("NotoSansTC-Regular.otf"),
-            Self::Japanese => Some("NotoSansJP-Regular.otf"),
-            Self::Korean => Some("NotoSansKR-Regular.otf"),
+            Self::ChineseSimplified => Some("msyh.ttc"),
+            Self::ChineseTraditional => Some("msjh.ttc"),
+            Self::Japanese => Some("YuGothM.ttc"),
+            Self::Korean => Some("malgun.ttf"),
             _ => None,
         }
     }
+}
+
+pub fn needs_cjk_font_download_in(
+    language: UiLanguage,
+    windows_fonts_directory: &std::path::Path,
+) -> bool {
+    language
+        .windows_font_file()
+        .is_some_and(|file| !windows_fonts_directory.join(file).is_file())
 }
 
 pub fn language_from_selector(index: i32) -> Option<UiLanguage> {
@@ -311,6 +320,22 @@ impl UiCopy {
             UiLanguage::Korean => "언어 기본 설정을 저장할 수 없습니다",
         };
         format!("{message}: {error}")
+    }
+    pub fn cjk_font_download_text(self) -> &'static str {
+        match self.language {
+            UiLanguage::English => "Download CJK font",
+            UiLanguage::French => "Télécharger la police CJK",
+            UiLanguage::German => "CJK-Schrift herunterladen",
+            UiLanguage::Spanish => "Descargar fuente CJK",
+            UiLanguage::PortugueseBrazil => "Baixar fonte CJK",
+            UiLanguage::Italian => "Scarica font CJK",
+            UiLanguage::Polish => "Pobierz czcionkę CJK",
+            UiLanguage::Russian => "Скачать шрифт CJK",
+            UiLanguage::ChineseSimplified => "下载 CJK 字体",
+            UiLanguage::ChineseTraditional => "下載 CJK 字型",
+            UiLanguage::Japanese => "CJK フォントをダウンロード",
+            UiLanguage::Korean => "CJK 글꼴 다운로드",
+        }
     }
     pub fn no_source_loaded(self) -> &'static str {
         match self.language {
@@ -1139,7 +1164,10 @@ const DYNAMIC_KO: [&str; 10] = [
 
 #[cfg(test)]
 mod tests {
-    use super::{UiLanguage, catalog, language_from_self_name, load_catalog, resolve_language};
+    use super::{
+        UiLanguage, catalog, language_from_self_name, load_catalog, needs_cjk_font_download_in,
+        resolve_language,
+    };
 
     #[test]
     fn resolver_prefers_a_supported_saved_override() {
@@ -1214,38 +1242,55 @@ mod tests {
     }
 
     #[test]
-    fn east_asian_languages_request_the_packaged_noto_font() {
+    fn east_asian_languages_request_the_matching_windows_ui_font() {
         assert_eq!(
             UiLanguage::ChineseSimplified.default_font_family(),
-            "Noto Sans SC"
+            "Microsoft YaHei UI"
         );
         assert_eq!(
             UiLanguage::ChineseTraditional.default_font_family(),
-            "Noto Sans TC"
+            "Microsoft JhengHei UI"
         );
-        assert_eq!(UiLanguage::Japanese.default_font_family(), "Noto Sans JP");
-        assert_eq!(UiLanguage::Korean.default_font_family(), "Noto Sans KR");
+        assert_eq!(UiLanguage::Japanese.default_font_family(), "Yu Gothic UI");
+        assert_eq!(UiLanguage::Korean.default_font_family(), "Malgun Gothic");
     }
 
     #[test]
-    fn east_asian_languages_ship_an_open_licensed_font_file() {
+    fn east_asian_languages_identify_their_native_windows_font_file() {
         assert_eq!(
-            UiLanguage::ChineseSimplified.bundled_font_file(),
-            Some("NotoSansSC-Regular.otf")
+            UiLanguage::ChineseSimplified.windows_font_file(),
+            Some("msyh.ttc")
         );
         assert_eq!(
-            UiLanguage::ChineseTraditional.bundled_font_file(),
-            Some("NotoSansTC-Regular.otf")
+            UiLanguage::ChineseTraditional.windows_font_file(),
+            Some("msjh.ttc")
         );
         assert_eq!(
-            UiLanguage::Japanese.bundled_font_file(),
-            Some("NotoSansJP-Regular.otf")
+            UiLanguage::Japanese.windows_font_file(),
+            Some("YuGothM.ttc")
         );
-        assert_eq!(
-            UiLanguage::Korean.bundled_font_file(),
-            Some("NotoSansKR-Regular.otf")
-        );
-        assert_eq!(UiLanguage::English.bundled_font_file(), None);
+        assert_eq!(UiLanguage::Korean.windows_font_file(), Some("malgun.ttf"));
+        assert_eq!(UiLanguage::English.windows_font_file(), None);
+    }
+
+    #[test]
+    fn only_missing_native_cjk_fonts_offer_the_download_fallback() {
+        let directory = temp_directory();
+        std::fs::create_dir_all(&directory).expect("create font directory");
+
+        assert!(needs_cjk_font_download_in(
+            UiLanguage::ChineseSimplified,
+            &directory
+        ));
+        assert!(!needs_cjk_font_download_in(UiLanguage::English, &directory));
+
+        std::fs::write(directory.join("msyh.ttc"), []).expect("write font marker");
+        assert!(!needs_cjk_font_download_in(
+            UiLanguage::ChineseSimplified,
+            &directory
+        ));
+
+        let _ = std::fs::remove_dir_all(directory);
     }
 
     fn temp_directory() -> std::path::PathBuf {
