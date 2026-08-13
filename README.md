@@ -80,6 +80,11 @@ Each language is also shipped as its own UTF-8 file in
 selected file at startup and when the selector changes. A missing, malformed,
 or mismatched file falls back safely to the embedded catalog.
 
+Simplified Chinese, Traditional Chinese, Japanese, and Korean also ship with
+region-specific Noto Sans CJK subset fonts under `fonts\`. They are licensed
+under the SIL Open Font License 1.1 and provide consistent glyph coverage on a
+new Windows installation without redistributing Microsoft fonts.
+
 ## CLI inspection
 
 The CLI never opens a source for writing and streams regular-file output:

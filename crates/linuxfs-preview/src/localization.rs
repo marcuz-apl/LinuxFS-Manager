@@ -87,11 +87,21 @@ impl UiLanguage {
 
     pub const fn default_font_family(self) -> &'static str {
         match self {
-            Self::ChineseSimplified => "Microsoft YaHei UI",
-            Self::ChineseTraditional => "Microsoft JhengHei UI",
-            Self::Japanese => "Yu Gothic UI",
-            Self::Korean => "Malgun Gothic",
+            Self::ChineseSimplified => "Noto Sans SC",
+            Self::ChineseTraditional => "Noto Sans TC",
+            Self::Japanese => "Noto Sans JP",
+            Self::Korean => "Noto Sans KR",
             _ => "Segoe UI",
+        }
+    }
+
+    pub const fn bundled_font_file(self) -> Option<&'static str> {
+        match self {
+            Self::ChineseSimplified => Some("NotoSansSC-Regular.otf"),
+            Self::ChineseTraditional => Some("NotoSansTC-Regular.otf"),
+            Self::Japanese => Some("NotoSansJP-Regular.otf"),
+            Self::Korean => Some("NotoSansKR-Regular.otf"),
+            _ => None,
         }
     }
 }
@@ -1204,17 +1214,38 @@ mod tests {
     }
 
     #[test]
-    fn east_asian_languages_request_the_matching_windows_ui_font() {
+    fn east_asian_languages_request_the_packaged_noto_font() {
         assert_eq!(
             UiLanguage::ChineseSimplified.default_font_family(),
-            "Microsoft YaHei UI"
+            "Noto Sans SC"
         );
         assert_eq!(
             UiLanguage::ChineseTraditional.default_font_family(),
-            "Microsoft JhengHei UI"
+            "Noto Sans TC"
         );
-        assert_eq!(UiLanguage::Japanese.default_font_family(), "Yu Gothic UI");
-        assert_eq!(UiLanguage::Korean.default_font_family(), "Malgun Gothic");
+        assert_eq!(UiLanguage::Japanese.default_font_family(), "Noto Sans JP");
+        assert_eq!(UiLanguage::Korean.default_font_family(), "Noto Sans KR");
+    }
+
+    #[test]
+    fn east_asian_languages_ship_an_open_licensed_font_file() {
+        assert_eq!(
+            UiLanguage::ChineseSimplified.bundled_font_file(),
+            Some("NotoSansSC-Regular.otf")
+        );
+        assert_eq!(
+            UiLanguage::ChineseTraditional.bundled_font_file(),
+            Some("NotoSansTC-Regular.otf")
+        );
+        assert_eq!(
+            UiLanguage::Japanese.bundled_font_file(),
+            Some("NotoSansJP-Regular.otf")
+        );
+        assert_eq!(
+            UiLanguage::Korean.bundled_font_file(),
+            Some("NotoSansKR-Regular.otf")
+        );
+        assert_eq!(UiLanguage::English.bundled_font_file(), None);
     }
 
     fn temp_directory() -> std::path::PathBuf {

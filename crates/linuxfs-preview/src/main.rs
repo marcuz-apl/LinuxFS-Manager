@@ -513,6 +513,36 @@ fn packaged_locales_directory() -> std::path::PathBuf {
         .unwrap_or_else(|| std::path::PathBuf::from("locales"))
 }
 
+#[cfg(windows)]
+fn packaged_fonts_directory() -> std::path::PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(|parent| parent.join("fonts")))
+        .unwrap_or_else(|| std::path::PathBuf::from("fonts"))
+}
+
+#[cfg(windows)]
+fn register_packaged_fonts(directory: &std::path::Path) {
+    use slint::fontique_010::fontique;
+    use std::sync::Arc;
+
+    let mut collection = slint::fontique_010::shared_collection();
+    for language in [
+        linuxfs_preview::localization::UiLanguage::ChineseSimplified,
+        linuxfs_preview::localization::UiLanguage::ChineseTraditional,
+        linuxfs_preview::localization::UiLanguage::Japanese,
+        linuxfs_preview::localization::UiLanguage::Korean,
+    ] {
+        let Some(file) = language.bundled_font_file() else {
+            continue;
+        };
+        let Ok(data) = std::fs::read(directory.join(file)) else {
+            continue;
+        };
+        let _ = collection.register_fonts(fontique::Blob::new(Arc::new(data)), None);
+    }
+}
+
 fn start_pending_operation<T>(
     pending: &std::sync::Mutex<Option<T>>,
     start: impl FnOnce() -> T,
@@ -721,10 +751,12 @@ fn open_winfsp_download_page() -> Result<(), Box<dyn std::error::Error>> {
 fn run_prerequisite_gate(
     initial_assessment: &linuxfs_winfsp::WinFspAssessment,
     catalog: &linuxfs_preview::localization::LocalizedCatalog,
+    fonts_directory: &std::path::Path,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     use std::sync::{Arc, Mutex};
 
     let window = PrerequisiteWindow::new()?;
+    register_packaged_fonts(fonts_directory);
     apply_prerequisite_copy(&window, catalog);
     let initial_state = PrerequisiteState::from_assessment(initial_assessment);
     window.set_requirement_message(initial_state.message.into());
@@ -872,6 +904,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let windows_locale = windows_user_locale();
     let resolved_language = resolve_language(config.ui_language.as_deref(), &windows_locale);
     let locales_directory = packaged_locales_directory();
+    let fonts_directory = packaged_fonts_directory();
     let localized_catalog = load_catalog(resolved_language, &locales_directory);
     let copy = localized_catalog.copy;
     let selected_language_index = config
@@ -882,7 +915,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut assessment = linuxfs_winfsp::assess_winfsp();
     let _ = linuxfs_app::runtime::record_winfsp_assessment(&assessment);
-    if !assessment.is_ready() && !run_prerequisite_gate(&assessment, &localized_catalog)? {
+    if !assessment.is_ready()
+        && !run_prerequisite_gate(&assessment, &localized_catalog, &fonts_directory)?
+    {
         return Ok(());
     }
     assessment = linuxfs_winfsp::assess_winfsp();
@@ -907,6 +942,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     linuxfs_winfsp::prepare_runtime()?;
     let _winfsp = winfsp::winfsp_init()?;
     let window = MainWindow::new()?;
+    register_packaged_fonts(&fonts_directory);
     apply_localized_copy(&window, &localized_catalog);
     window.set_selected_language_index(selected_language_index);
     window.show()?;

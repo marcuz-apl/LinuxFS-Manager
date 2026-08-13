@@ -204,6 +204,7 @@ Slint UI should:
 - display progress/errors
 - localize application-owned copy without changing source metadata, mount state, or drive-letter selection
 - treat packaged locale files as UTF-8 untrusted presentation data; reject malformed or mismatched files and use the bundled fallback
+- use only redistributable font assets with their license text when packaging language-specific glyph coverage; never bundle Windows system fonts
 
 Slint UI should not:
 

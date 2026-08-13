@@ -15,7 +15,7 @@ linuxfs-app = { path = "../linuxfs-app" }
 linuxfs-core = { path = "../linuxfs-core" }
 linuxfs-winfsp = { path = "../linuxfs-winfsp" }
 raw-window-handle = "0.6"
-slint = { version = "1.13", features = ["raw-window-handle-06"] }
+slint = { version = "1.13", features = ["raw-window-handle-06", "unstable-fontique-010"] }
 toml = "0.8"
 
 [target.'cfg(windows)'.dependencies]
