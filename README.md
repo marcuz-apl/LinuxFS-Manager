@@ -75,6 +75,11 @@ Automatic again.
 Filesystem labels, file names, paths, UUIDs, drive letters, and raw Windows
 errors remain exact source values; the application does not translate them.
 
+Each language is also shipped as its own UTF-8 file in
+`locales\<language-tag>.toml` beside the executable. LinuxFS Manager reads the
+selected file at startup and when the selector changes. A missing, malformed,
+or mismatched file falls back safely to the embedded catalog.
+
 ## CLI inspection
 
 The CLI never opens a source for writing and streams regular-file output:

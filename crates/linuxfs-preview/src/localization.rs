@@ -415,6 +415,58 @@ pub fn catalog(language: UiLanguage) -> UiCopy {
     UiCopy::new(language)
 }
 
+#[derive(Clone, Debug)]
+pub struct LocalizedCatalog {
+    pub copy: UiCopy,
+    overrides: std::collections::BTreeMap<String, String>,
+}
+
+impl LocalizedCatalog {
+    pub fn text(&self, key: &str, fallback: &str) -> String {
+        self.overrides
+            .get(key)
+            .filter(|value| !value.trim().is_empty())
+            .cloned()
+            .unwrap_or_else(|| fallback.to_owned())
+    }
+
+    pub fn language_options(&self) -> Vec<String> {
+        std::iter::once(self.text("automatic_language", self.copy.automatic_language))
+            .chain(
+                UiLanguage::ALL
+                    .into_iter()
+                    .map(|language| language.self_name().to_owned()),
+            )
+            .collect()
+    }
+}
+
+pub fn load_catalog(language: UiLanguage, directory: &std::path::Path) -> LocalizedCatalog {
+    let copy = catalog(language);
+    let path = directory.join(format!("{}.toml", language.tag()));
+    let overrides = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| text.parse::<toml::Value>().ok())
+        .and_then(|document| {
+            (document.get("language").and_then(toml::Value::as_str) == Some(language.tag()))
+                .then_some(document)
+        })
+        .and_then(|document| {
+            document
+                .get("strings")
+                .and_then(toml::Value::as_table)
+                .cloned()
+        })
+        .map(|strings| {
+            strings
+                .into_iter()
+                .filter_map(|(key, value)| value.as_str().map(|value| (key, value.to_owned())))
+                .collect()
+        })
+        .unwrap_or_default();
+    LocalizedCatalog { copy, overrides }
+}
+
 #[derive(Clone, Copy)]
 #[repr(usize)]
 enum TextKey {
@@ -1067,7 +1119,7 @@ const DYNAMIC_KO: [&str; 10] = [
 
 #[cfg(test)]
 mod tests {
-    use super::{UiLanguage, catalog, language_from_self_name, resolve_language};
+    use super::{UiLanguage, catalog, language_from_self_name, load_catalog, resolve_language};
 
     #[test]
     fn resolver_prefers_a_supported_saved_override() {
@@ -1116,5 +1168,36 @@ mod tests {
             catalog(UiLanguage::ChineseTraditional).no_source_loaded(),
             "未載入來源"
         );
+    }
+
+    #[test]
+    fn external_file_overrides_copy_only_for_its_declared_language() {
+        let directory = temp_directory();
+        std::fs::create_dir_all(&directory).expect("create locale directory");
+        std::fs::write(
+            directory.join("es-ES.toml"),
+            "language = \"es-ES\"\n[strings]\napp_title = \"Gestor LinuxFS\"\n",
+        )
+        .expect("write locale");
+
+        let spanish = load_catalog(UiLanguage::Spanish, &directory);
+        let english = load_catalog(UiLanguage::English, &directory);
+        assert_eq!(
+            spanish.text("app_title", spanish.copy.app_title),
+            "Gestor LinuxFS"
+        );
+        assert_eq!(
+            english.text("app_title", english.copy.app_title),
+            "LinuxFS Manager"
+        );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    fn temp_directory() -> std::path::PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!("linuxfs-manager-locales-{nonce}"))
     }
 }

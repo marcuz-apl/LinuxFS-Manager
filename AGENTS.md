@@ -203,6 +203,7 @@ Slint UI should:
 - emit user intentions
 - display progress/errors
 - localize application-owned copy without changing source metadata, mount state, or drive-letter selection
+- treat packaged locale files as UTF-8 untrusted presentation data; reject malformed or mismatched files and use the bundled fallback
 
 Slint UI should not:
 

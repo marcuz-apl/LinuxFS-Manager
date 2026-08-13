@@ -364,6 +364,10 @@ The optional explicit preference shall be stored in the versioned configuration
 file; changing language must not rescan sources, alter a mount, or change a
 drive letter.
 
+The portable package shall include one UTF-8 text file per supported language
+under `locales\`. The application shall validate its declared language tag and
+fall back to the bundled catalog if a text file is unavailable or malformed.
+
 Filesystem names, labels, paths, UUIDs, drive letters, and raw external error
 details remain exact values. Right-to-left languages are outside this release
 until separately designed and validated.

@@ -376,13 +376,14 @@ slint::slint! {
 
 #[cfg(windows)]
 fn language_items(
-    copy: linuxfs_preview::localization::UiCopy,
+    catalog: &linuxfs_preview::localization::LocalizedCatalog,
 ) -> slint::ModelRc<slint::SharedString> {
     use slint::{ModelRc, SharedString, VecModel};
     use std::rc::Rc;
 
     ModelRc::from(Rc::new(VecModel::from(
-        copy.language_options()
+        catalog
+            .language_options()
             .into_iter()
             .map(SharedString::from)
             .collect::<Vec<_>>(),
@@ -390,46 +391,103 @@ fn language_items(
 }
 
 #[cfg(windows)]
-fn apply_localized_copy(window: &MainWindow, copy: linuxfs_preview::localization::UiCopy) {
-    window.set_app_title(copy.app_title.into());
-    window.set_app_subtitle(copy.app_subtitle.into());
-    window.set_scan_drives_text(copy.scan_drives.into());
-    window.set_open_image_text(copy.open_image.into());
-    window.set_about_text(copy.about.into());
-    window.set_sources_text(copy.sources.into());
-    window.set_sources_subtitle_text(copy.sources_subtitle.into());
-    window.set_sources_empty_text(copy.sources_empty.into());
-    window.set_filesystem_details_text(copy.filesystem_details.into());
-    window.set_open_filesystem_image_text(copy.open_filesystem_image.into());
-    window.set_image_placeholder_text(copy.image_placeholder.into());
-    window.set_mount_text(copy.mount.into());
-    window.set_unmount_text(copy.unmount.into());
-    window.set_open_in_explorer_text(copy.open_in_explorer.into());
-    window.set_details_text(copy.details.into());
-    window.set_read_only_warning_text(copy.read_only_warning.into());
-    window.set_version_text(copy.version.into());
-    window.set_about_description_text(copy.about_description.into());
-    window.set_copyright_text(copy.copyright.into());
-    window.set_close_text(copy.close.into());
-    window.set_language_options(language_items(copy));
+fn apply_localized_copy(
+    window: &MainWindow,
+    catalog: &linuxfs_preview::localization::LocalizedCatalog,
+) {
+    let copy = catalog.copy;
+    window.set_app_title(catalog.text("app_title", copy.app_title).into());
+    window.set_app_subtitle(catalog.text("app_subtitle", copy.app_subtitle).into());
+    window.set_scan_drives_text(catalog.text("scan_drives", copy.scan_drives).into());
+    window.set_open_image_text(catalog.text("open_image", copy.open_image).into());
+    window.set_about_text(catalog.text("about", copy.about).into());
+    window.set_sources_text(catalog.text("sources", copy.sources).into());
+    window.set_sources_subtitle_text(
+        catalog
+            .text("sources_subtitle", copy.sources_subtitle)
+            .into(),
+    );
+    window.set_sources_empty_text(catalog.text("sources_empty", copy.sources_empty).into());
+    window.set_filesystem_details_text(
+        catalog
+            .text("filesystem_details", copy.filesystem_details)
+            .into(),
+    );
+    window.set_open_filesystem_image_text(
+        catalog
+            .text("open_filesystem_image", copy.open_filesystem_image)
+            .into(),
+    );
+    window.set_image_placeholder_text(
+        catalog
+            .text("image_placeholder", copy.image_placeholder)
+            .into(),
+    );
+    window.set_mount_text(catalog.text("mount", copy.mount).into());
+    window.set_unmount_text(catalog.text("unmount", copy.unmount).into());
+    window.set_open_in_explorer_text(
+        catalog
+            .text("open_in_explorer", copy.open_in_explorer)
+            .into(),
+    );
+    window.set_details_text(catalog.text("details", copy.details).into());
+    window.set_read_only_warning_text(
+        catalog
+            .text("read_only_warning", copy.read_only_warning)
+            .into(),
+    );
+    window.set_version_text(catalog.text("version", copy.version).into());
+    window.set_about_description_text(
+        catalog
+            .text("about_description", copy.about_description)
+            .into(),
+    );
+    window.set_copyright_text(catalog.text("copyright", copy.copyright).into());
+    window.set_close_text(catalog.text("close", copy.close).into());
+    window.set_language_options(language_items(catalog));
 }
 
 #[cfg(windows)]
 fn apply_prerequisite_copy(
     window: &PrerequisiteWindow,
-    copy: linuxfs_preview::localization::UiCopy,
+    catalog: &linuxfs_preview::localization::LocalizedCatalog,
 ) {
-    window.set_app_title(copy.app_title.into());
-    window.set_prerequisite_title(copy.prerequisite_title.into());
-    window.set_prerequisite_subtitle(copy.prerequisite_subtitle.into());
-    window.set_to_continue_text(copy.to_continue.into());
-    window.set_prerequisite_step_one_text(copy.prerequisite_step_one.into());
-    window.set_prerequisite_step_two_text(copy.prerequisite_step_two.into());
-    window.set_prerequisite_step_three_text(copy.prerequisite_step_three.into());
-    window.set_prerequisite_notice_text(copy.prerequisite_notice.into());
-    window.set_close_text(copy.close.into());
-    window.set_download_winfsp_text(copy.download_winfsp.into());
-    window.set_recheck_text(copy.recheck.into());
+    let copy = catalog.copy;
+    window.set_app_title(catalog.text("app_title", copy.app_title).into());
+    window.set_prerequisite_title(
+        catalog
+            .text("prerequisite_title", copy.prerequisite_title)
+            .into(),
+    );
+    window.set_prerequisite_subtitle(
+        catalog
+            .text("prerequisite_subtitle", copy.prerequisite_subtitle)
+            .into(),
+    );
+    window.set_to_continue_text(catalog.text("to_continue", copy.to_continue).into());
+    window.set_prerequisite_step_one_text(
+        catalog
+            .text("prerequisite_step_one", copy.prerequisite_step_one)
+            .into(),
+    );
+    window.set_prerequisite_step_two_text(
+        catalog
+            .text("prerequisite_step_two", copy.prerequisite_step_two)
+            .into(),
+    );
+    window.set_prerequisite_step_three_text(
+        catalog
+            .text("prerequisite_step_three", copy.prerequisite_step_three)
+            .into(),
+    );
+    window.set_prerequisite_notice_text(
+        catalog
+            .text("prerequisite_notice", copy.prerequisite_notice)
+            .into(),
+    );
+    window.set_close_text(catalog.text("close", copy.close).into());
+    window.set_download_winfsp_text(catalog.text("download_winfsp", copy.download_winfsp).into());
+    window.set_recheck_text(catalog.text("recheck", copy.recheck).into());
 }
 
 #[cfg(windows)]
@@ -439,6 +497,14 @@ fn active_ui_copy(
     copy.lock().map(|copy| *copy).unwrap_or_else(|_| {
         linuxfs_preview::localization::catalog(linuxfs_preview::localization::UiLanguage::English)
     })
+}
+
+#[cfg(windows)]
+fn packaged_locales_directory() -> std::path::PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(|parent| parent.join("locales")))
+        .unwrap_or_else(|| std::path::PathBuf::from("locales"))
 }
 
 fn start_pending_operation<T>(
@@ -648,12 +714,12 @@ fn open_winfsp_download_page() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(windows)]
 fn run_prerequisite_gate(
     initial_assessment: &linuxfs_winfsp::WinFspAssessment,
-    copy: linuxfs_preview::localization::UiCopy,
+    catalog: &linuxfs_preview::localization::LocalizedCatalog,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     use std::sync::{Arc, Mutex};
 
     let window = PrerequisiteWindow::new()?;
-    apply_prerequisite_copy(&window, copy);
+    apply_prerequisite_copy(&window, catalog);
     let initial_state = PrerequisiteState::from_assessment(initial_assessment);
     window.set_requirement_message(initial_state.message.into());
     window.show()?;
@@ -774,7 +840,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         runtime::{BackgroundOperation, config_store, load_config, spawn_background},
     };
     use linuxfs_preview::localization::{
-        catalog, language_from_self_name, resolve_language, windows_user_locale,
+        language_from_self_name, load_catalog, resolve_language, windows_user_locale,
     };
     use std::{
         env,
@@ -799,7 +865,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config().unwrap_or_default();
     let windows_locale = windows_user_locale();
     let resolved_language = resolve_language(config.ui_language.as_deref(), &windows_locale);
-    let copy = catalog(resolved_language);
+    let locales_directory = packaged_locales_directory();
+    let localized_catalog = load_catalog(resolved_language, &locales_directory);
+    let copy = localized_catalog.copy;
     let selected_language_index = config
         .ui_language
         .as_deref()
@@ -808,7 +876,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut assessment = linuxfs_winfsp::assess_winfsp();
     let _ = linuxfs_app::runtime::record_winfsp_assessment(&assessment);
-    if !assessment.is_ready() && !run_prerequisite_gate(&assessment, copy)? {
+    if !assessment.is_ready() && !run_prerequisite_gate(&assessment, &localized_catalog)? {
         return Ok(());
     }
     assessment = linuxfs_winfsp::assess_winfsp();
@@ -833,7 +901,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     linuxfs_winfsp::prepare_runtime()?;
     let _winfsp = winfsp::winfsp_init()?;
     let window = MainWindow::new()?;
-    apply_localized_copy(&window, copy);
+    apply_localized_copy(&window, &localized_catalog);
     window.set_selected_language_index(selected_language_index);
     window.show()?;
     center_main_window(&window);
@@ -859,13 +927,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_for_language = Arc::clone(&config);
     let active_copy_for_language = Arc::clone(&active_copy);
     let windows_locale_for_language = windows_locale.clone();
+    let locales_directory_for_language = locales_directory.clone();
     window.on_language_selected(move |value| {
         let preference =
             language_from_self_name(value.as_str()).map(|language| language.tag().to_owned());
-        let copy = catalog(resolve_language(
-            preference.as_deref(),
-            &windows_locale_for_language,
-        ));
+        let localized_catalog = load_catalog(
+            resolve_language(preference.as_deref(), &windows_locale_for_language),
+            &locales_directory_for_language,
+        );
+        let copy = localized_catalog.copy;
         if let Ok(mut active_copy) = active_copy_for_language.lock() {
             *active_copy = copy;
         }
@@ -879,7 +949,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .map_err(|error| error.to_string())
             });
         if let Some(window) = weak.upgrade() {
-            apply_localized_copy(&window, copy);
+            apply_localized_copy(&window, &localized_catalog);
             window.set_selected_language_index(
                 preference
                     .as_deref()

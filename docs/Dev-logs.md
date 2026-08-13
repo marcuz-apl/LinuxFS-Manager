@@ -19,11 +19,12 @@ to English for unsupported Windows locales. Explicit choices persist in the
 versioned TOML configuration without changing mount, scan, source, or drive
 letter state.
 
-All translated content is compiled into the executable; no mutable external
-translation files are packaged. Filesystem labels, paths, UUIDs, drive letters,
-and raw external errors deliberately remain unchanged. Arabic is excluded from
-this release because right-to-left layout support has not been designed or
-validated.
+Each language is also shipped as one UTF-8 TOML file in `locales\`, loaded at
+startup and when the selector changes. A missing, malformed, or mismatched
+file falls back to the embedded catalog. Filesystem labels, paths, UUIDs, drive
+letters, and raw external errors deliberately remain unchanged. Arabic is
+excluded from this release because right-to-left layout support has not been
+designed or validated.
 
 ## 2026-08-13 — light workspace palette and dark native caption
 
