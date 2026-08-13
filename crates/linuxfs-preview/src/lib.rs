@@ -1,3 +1,5 @@
+pub mod localization;
+
 #[cfg(windows)]
 pub const fn dark_caption_attribute() -> u32 {
     20
