@@ -50,6 +50,37 @@ fn drive_letter_is_present(mask: u32, mount_point: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn select_drive_letter_from_mask(
+    mask: u32,
+    preferred: Option<&str>,
+) -> linuxfs_core::Result<String> {
+    if let Some(preferred) = preferred {
+        let preferred_mask = drive_letter_mask(preferred)?;
+        if mask & preferred_mask == 0 {
+            return Ok(preferred
+                .strip_prefix(r"\\.\")
+                .unwrap_or(preferred)
+                .to_ascii_uppercase());
+        }
+    }
+
+    for index in (0_u8..26).rev() {
+        let drive_mask = 1_u32 << index;
+        if mask & drive_mask == 0 {
+            return Ok(format!("{}:", char::from(b'A' + index)));
+        }
+    }
+
+    Err(linuxfs_core::Error::new(
+        linuxfs_core::ErrorCategory::MountPointUnavailable,
+        "all Windows drive letters are currently occupied",
+    ))
+}
+
+pub fn select_available_drive_letter(preferred: Option<&str>) -> linuxfs_core::Result<String> {
+    select_drive_letter_from_mask(logical_drives(), preferred)
+}
+
 #[allow(unsafe_code)]
 fn logical_drives() -> u32 {
     // SAFETY: GetLogicalDrives has no pointer arguments and returns the current
@@ -599,5 +630,32 @@ mod tests {
         assert!(drive_letter_mask("volume").is_err());
         assert!(drive_letter_is_present(1 << 11, "L:"));
         assert!(!drive_letter_is_present(1 << 10, "L:"));
+    }
+
+    #[test]
+    fn drive_letter_selection_prefers_configured_free_letter() {
+        assert_eq!(
+            select_drive_letter_from_mask(1 << 25, Some("L:")).expect("free preferred letter"),
+            "L:"
+        );
+    }
+
+    #[test]
+    fn drive_letter_selection_falls_back_to_highest_free_letter() {
+        assert_eq!(
+            select_drive_letter_from_mask((1 << 25) | (1 << 24) | (1 << 11), Some("L:"))
+                .expect("free fallback"),
+            "X:"
+        );
+    }
+
+    #[test]
+    fn drive_letter_selection_rejects_when_all_letters_are_used() {
+        let error = select_drive_letter_from_mask(u32::MAX, None)
+            .expect_err("all drive letters are occupied");
+        assert_eq!(
+            error.category(),
+            linuxfs_core::ErrorCategory::MountPointUnavailable
+        );
     }
 }

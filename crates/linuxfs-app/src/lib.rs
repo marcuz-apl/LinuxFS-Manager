@@ -747,7 +747,7 @@ mod provided_image_tests {
 
 #[cfg(windows)]
 pub struct WindowsImageMountService {
-    mount_point: String,
+    preferred_mount_point: String,
     mounts: std::collections::HashMap<
         SourceId,
         linuxfs_winfsp::MountManager<
@@ -760,24 +760,16 @@ pub struct WindowsImageMountService {
 impl WindowsImageMountService {
     pub fn new(mount_point: impl Into<String>) -> Self {
         Self {
-            mount_point: mount_point.into(),
+            preferred_mount_point: mount_point.into(),
             mounts: std::collections::HashMap::new(),
         }
     }
 
-    fn validate_mount_point(&self) -> linuxfs_core::Result<()> {
-        let point = self.mount_point.trim();
-        let bytes = point.as_bytes();
-        let is_drive_letter =
-            bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':';
-        if is_drive_letter {
-            Ok(())
-        } else {
-            Err(linuxfs_core::Error::new(
-                linuxfs_core::ErrorCategory::MountPointUnavailable,
-                format!("invalid mount point {point:?}; expected a drive letter such as L:"),
-            ))
-        }
+    fn select_mount_point(&self) -> linuxfs_core::Result<String> {
+        linuxfs_winfsp::native::select_available_drive_letter(
+            (!self.preferred_mount_point.trim().is_empty())
+                .then_some(self.preferred_mount_point.trim()),
+        )
     }
 }
 
@@ -805,8 +797,6 @@ impl MountService for WindowsImageMountService {
         use linuxfs_winfsp::{MountManager, native::NativeMountHost};
         use std::sync::Arc;
 
-        self.validate_mount_point()?;
-
         if !source_kind_is_mountable(source.kind) {
             return Err(linuxfs_core::Error::new(
                 linuxfs_core::ErrorCategory::UnsupportedFilesystem,
@@ -822,12 +812,10 @@ impl MountService for WindowsImageMountService {
         if !self.mounts.is_empty() {
             return Err(linuxfs_core::Error::new(
                 linuxfs_core::ErrorCategory::MountPointUnavailable,
-                format!(
-                    "mount point {} is already in use by another source",
-                    self.mount_point
-                ),
+                "mount point is already in use by another source",
             ));
         }
+        let mount_point = self.select_mount_point()?;
         let image_reader: Arc<dyn BlockReader> = match source.physical_disk_index {
             Some(index) => Arc::new(linuxfs_windows::PhysicalDiskReader::open(index)?),
             None => Arc::new(RawImageReader::open(&source.source_path)?),
@@ -841,7 +829,7 @@ impl MountService for WindowsImageMountService {
             None => image_reader,
         };
         let backend = ExtReadOnlyBackend::open(reader)?;
-        let global_mount_point = format!(r"\\.\{}", self.mount_point);
+        let global_mount_point = format!(r"\\.\{}", mount_point);
         let host = NativeMountHost::new(backend, "LinuxFS Manager", global_mount_point).map_err(
             |error| {
                 linuxfs_core::Error::with_source(
@@ -854,7 +842,7 @@ impl MountService for WindowsImageMountService {
         let mut manager = MountManager::new(host);
         manager.mount()?;
         self.mounts.insert(source.id, manager);
-        Ok(self.mount_point.clone())
+        Ok(mount_point)
     }
 
     fn unmount(&mut self, source: &SourceViewModel) -> linuxfs_core::Result<()> {

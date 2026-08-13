@@ -207,7 +207,7 @@ slint::slint! {
                         VerticalBox {
                             spacing: 4px;
                             Rectangle { vertical-stretch: 1; }
-                            Text { text: "About LinuxFS Manager"; font-size: 24px; font-weight: 700; color: #17324d; }
+                            Text { text: "LinuxFS Manager"; font-size: 24px; font-weight: 700; color: #17324d; }
                             Text { text: "Version " + root.app_version; color: #64788f; }
                             Rectangle { vertical-stretch: 1; }
                         }
@@ -351,7 +351,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_deref()
         .filter(|letter| letter.len() == 1 && letter.as_bytes()[0].is_ascii_alphabetic())
         .map(|letter| format!("{letter}:"))
-        .unwrap_or_else(|| "L:".to_owned());
+        .unwrap_or_default();
     let image = env::args_os()
         .nth(1)
         .map(|path| path.to_string_lossy().into_owned());
