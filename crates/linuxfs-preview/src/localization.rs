@@ -92,6 +92,12 @@ pub fn language_from_selector(index: i32) -> Option<UiLanguage> {
         .find(|language| language.selector_index() == index)
 }
 
+pub fn language_from_self_name(name: &str) -> Option<UiLanguage> {
+    UiLanguage::ALL
+        .into_iter()
+        .find(|language| language.self_name() == name)
+}
+
 pub fn resolve_language(preference: Option<&str>, windows_locale: &str) -> UiLanguage {
     preference
         .and_then(parse_supported_language)
@@ -268,6 +274,23 @@ impl UiCopy {
     }
     pub fn existing_mount_available(self, error: &str) -> String {
         dynamic(self.language, DynamicKey::ExistingMountAvailable, error)
+    }
+    pub fn language_save_failed(self, error: &str) -> String {
+        let message = match self.language {
+            UiLanguage::English => "Could not save language preference",
+            UiLanguage::French => "Impossible d’enregistrer la préférence de langue",
+            UiLanguage::German => "Spracheinstellung konnte nicht gespeichert werden",
+            UiLanguage::Spanish => "No se pudo guardar la preferencia de idioma",
+            UiLanguage::PortugueseBrazil => "Não foi possível salvar a preferência de idioma",
+            UiLanguage::Italian => "Impossibile salvare la preferenza della lingua",
+            UiLanguage::Polish => "Nie można zapisać preferencji języka",
+            UiLanguage::Russian => "Не удалось сохранить настройку языка",
+            UiLanguage::ChineseSimplified => "无法保存语言首选项",
+            UiLanguage::ChineseTraditional => "無法儲存語言偏好設定",
+            UiLanguage::Japanese => "言語設定を保存できませんでした",
+            UiLanguage::Korean => "언어 기본 설정을 저장할 수 없습니다",
+        };
+        format!("{message}: {error}")
     }
     pub fn is_complete(self) -> bool {
         TextKey::ALL
@@ -932,7 +955,7 @@ const DYNAMIC_KO: [&str; 10] = [
 
 #[cfg(test)]
 mod tests {
-    use super::{UiLanguage, catalog, resolve_language};
+    use super::{UiLanguage, catalog, language_from_self_name, resolve_language};
 
     #[test]
     fn resolver_prefers_a_supported_saved_override() {
@@ -957,5 +980,13 @@ mod tests {
         let status = catalog(UiLanguage::Japanese).mounted("Z:");
         assert!(status.contains("Z:"));
         assert_ne!(status, "Mounted read-only on Z: — source unchanged");
+    }
+
+    #[test]
+    fn selector_self_name_resolves_to_its_language() {
+        assert_eq!(
+            language_from_self_name("繁體中文"),
+            Some(UiLanguage::ChineseTraditional)
+        );
     }
 }

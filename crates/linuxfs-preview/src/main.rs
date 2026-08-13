@@ -1,10 +1,10 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 slint::slint! {
-    import { Button, VerticalBox, HorizontalBox, LineEdit, ListView } from "std-widgets.slint";
+    import { Button, ComboBox, VerticalBox, HorizontalBox, LineEdit, ListView } from "std-widgets.slint";
 
     export component MainWindow inherits Window {
-        title: "LinuxFS Manager";
+        title: root.app_title;
         width: 1200px;
         height: 820px;
         preferred-width: 1200px;
@@ -22,6 +22,28 @@ slint::slint! {
         in-out property <bool> can_unmount: false;
         in-out property <int> selected_source: -1;
         in-out property <[string]> source_names: [];
+        in-out property <[string]> language_options: [];
+        in-out property <int> selected_language_index: 0;
+        in-out property <string> app_title: "LinuxFS Manager";
+        in-out property <string> app_subtitle: "Read Linux filesystems safely on Windows";
+        in-out property <string> scan_drives_text: "Scan Drives";
+        in-out property <string> open_image_text: "Open Image…";
+        in-out property <string> about_text: "About";
+        in-out property <string> sources_text: "Sources";
+        in-out property <string> sources_subtitle_text: "Partitions and image files";
+        in-out property <string> sources_empty_text: "Scan your drives or open an image to begin.";
+        in-out property <string> filesystem_details_text: "Filesystem details";
+        in-out property <string> open_filesystem_image_text: "Open a filesystem image";
+        in-out property <string> image_placeholder_text: "Image path (or use Open Image…)";
+        in-out property <string> mount_text: "Mount";
+        in-out property <string> unmount_text: "Unmount";
+        in-out property <string> open_in_explorer_text: "Open in Explorer";
+        in-out property <string> details_text: "Details";
+        in-out property <string> read_only_warning_text: "READ ONLY — source filesystems are never modified.";
+        in-out property <string> version_text: "Version";
+        in-out property <string> about_description_text: "LinuxFS Manager provides safe, read-only access to Ext2/3/4, SquashFS, and supported XFS images from Windows physical disks, partitions, and raw image files.";
+        in-out property <string> copyright_text: "LinuxFS Manager, @2026 Alfazen Inc. All rights reserved.";
+        in-out property <string> close_text: "Close";
         callback mount_clicked();
         callback unmount_clicked();
         callback open_explorer_clicked();
@@ -30,6 +52,7 @@ slint::slint! {
         callback scan_drives_clicked();
         callback open_image_clicked();
         callback source_selected(int);
+        callback language_selected(string);
 
         VerticalBox {
             padding: 20px;
@@ -48,13 +71,14 @@ slint::slint! {
 
                 VerticalBox {
                     spacing: 2px;
-                    Text { text: "LinuxFS Manager"; font-size: 25px; font-weight: 700; color: #17324d; }
-                    Text { text: "Read Linux filesystems safely on Windows"; font-size: 13px; color: #6b7c93; }
+                    Text { text: root.app_title; font-size: 25px; font-weight: 700; color: #17324d; }
+                    Text { text: root.app_subtitle; font-size: 13px; color: #6b7c93; }
                 }
                 Rectangle { horizontal-stretch: 1; }
-                Button { width: 112px; text: "Scan Drives"; clicked => { root.scan_drives_clicked(); } }
-                Button { width: 122px; text: "Open Image…"; clicked => { root.open_image_clicked(); } }
-                Button { width: 82px; text: "About"; clicked => { about_popup.show(); } }
+                ComboBox { width: 178px; model: root.language_options; current-index: root.selected_language_index; selected(value) => { root.language_selected(value); } }
+                Button { width: 112px; text: root.scan_drives_text; clicked => { root.scan_drives_clicked(); } }
+                Button { width: 122px; text: root.open_image_text; clicked => { root.open_image_clicked(); } }
+                Button { width: 82px; text: root.about_text; clicked => { about_popup.show(); } }
             }
 
             Rectangle {
@@ -77,13 +101,13 @@ slint::slint! {
                         VerticalBox {
                             padding: 20px;
                             spacing: 8px;
-                            Text { text: "Sources"; font-size: 19px; font-weight: 700; color: #17324d; }
-                            Text { text: "Partitions and image files"; font-size: 12px; color: #71849a; }
+                            Text { text: root.sources_text; font-size: 19px; font-weight: 700; color: #17324d; }
+                            Text { text: root.sources_subtitle_text; font-size: 12px; color: #71849a; }
                             Rectangle { height: 1px; background: #e3edf7; }
                             Rectangle { height: 4px; }
 
                             if (root.source_names.length == 0) : Text {
-                                text: "Scan your drives or open an image to begin.";
+                                text: root.sources_empty_text;
                                 color: #71849a;
                                 wrap: word-wrap;
                             }
@@ -125,7 +149,7 @@ slint::slint! {
                             VerticalBox {
                                 padding: 20px;
                                 spacing: 9px;
-                                Text { text: "Filesystem details"; font-size: 15px; font-weight: 700; color: #17324d; }
+                                Text { text: root.filesystem_details_text; font-size: 15px; font-weight: 700; color: #17324d; }
                                 Text { text: source_details; color: #526a83; wrap: word-wrap; }
                                 Rectangle { vertical-stretch: 1; }
                             }
@@ -133,17 +157,17 @@ slint::slint! {
 
                         VerticalBox {
                             spacing: 7px;
-                            Text { text: "Open a filesystem image"; font-size: 14px; font-weight: 700; color: #17324d; }
-                            LineEdit { height: 40px; text <=> root.image_path; placeholder-text: "Image path (or use Open Image…)"; }
+                            Text { text: root.open_filesystem_image_text; font-size: 14px; font-weight: 700; color: #17324d; }
+                            LineEdit { height: 40px; text <=> root.image_path; placeholder-text: root.image_placeholder_text; }
                         }
 
                         HorizontalBox {
                             height: 42px;
                             spacing: 10px;
-                            Button { width: 118px; primary: true; text: "Mount"; enabled: root.can_mount; clicked => { root.mount_clicked(); } }
-                            Button { width: 118px; text: "Unmount"; enabled: root.can_unmount; clicked => { root.unmount_clicked(); } }
-                            Button { width: 172px; text: "Open in Explorer"; enabled: root.can_unmount; clicked => { root.open_explorer_clicked(); } }
-                            Button { width: 118px; text: "Details"; clicked => { root.details_clicked(); } }
+                            Button { width: 118px; primary: true; text: root.mount_text; enabled: root.can_mount; clicked => { root.mount_clicked(); } }
+                            Button { width: 118px; text: root.unmount_text; enabled: root.can_unmount; clicked => { root.unmount_clicked(); } }
+                            Button { width: 172px; text: root.open_in_explorer_text; enabled: root.can_unmount; clicked => { root.open_explorer_clicked(); } }
+                            Button { width: 118px; text: root.details_text; clicked => { root.details_clicked(); } }
                             Rectangle { horizontal-stretch: 1; }
                         }
                     }
@@ -168,7 +192,7 @@ slint::slint! {
                 Text {
                     x: 42px;
                     y: 8px;
-                    text: "READ ONLY — source filesystems are never modified.";
+                    text: root.read_only_warning_text;
                     color: #245f47;
                     font-size: 13px;
                     font-weight: 700;
@@ -216,8 +240,8 @@ slint::slint! {
                         VerticalBox {
                             spacing: 4px;
                             Rectangle { vertical-stretch: 1; }
-                            Text { text: "LinuxFS Manager"; font-size: 24px; font-weight: 700; color: #17324d; }
-                            Text { text: "Version " + root.app_version; color: #64788f; }
+                            Text { text: root.app_title; font-size: 24px; font-weight: 700; color: #17324d; }
+                            Text { text: root.version_text + " " + root.app_version; color: #64788f; }
                             Rectangle { vertical-stretch: 1; }
                         }
                     }
@@ -225,7 +249,7 @@ slint::slint! {
                     Rectangle { height: 1px; background: #e5edf5; }
 
                     Text {
-                        text: "LinuxFS Manager provides safe, read-only access to Ext2/3/4, SquashFS, and supported XFS images from Windows physical disks, partitions, and raw image files.";
+                        text: root.about_description_text;
                         color: #405a72;
                         wrap: word-wrap;
                     }
@@ -233,7 +257,7 @@ slint::slint! {
                     Rectangle { vertical-stretch: 1; }
 
                     Text {
-                        text: "LinuxFS Manager, @2026 Alfazen Inc. All rights reserved.";
+                        text: root.copyright_text;
                         color: #6b7c93;
                         horizontal-alignment: center;
                     }
@@ -241,7 +265,7 @@ slint::slint! {
                     HorizontalBox {
                         height: 40px;
                         Rectangle { horizontal-stretch: 1; }
-                        Button { width: 100px; text: "Close"; clicked => { about_popup.close(); } }
+                        Button { width: 100px; text: root.close_text; clicked => { about_popup.close(); } }
                     }
                 }
             }
@@ -249,7 +273,7 @@ slint::slint! {
     }
 
     export component PrerequisiteWindow inherits Window {
-        title: "LinuxFS Manager — WinFsp required";
+        title: root.app_title + " — " + root.prerequisite_title;
         width: 680px;
         height: 470px;
         preferred-width: 680px;
@@ -258,6 +282,17 @@ slint::slint! {
         icon: @image-url("../../../assets/linuxfs-manager.png");
 
         in-out property <string> requirement_message: "WinFsp is required before LinuxFS Manager can open.";
+        in-out property <string> app_title: "LinuxFS Manager";
+        in-out property <string> prerequisite_title: "WinFsp is required";
+        in-out property <string> prerequisite_subtitle: "A Windows filesystem framework prerequisite";
+        in-out property <string> to_continue_text: "To continue";
+        in-out property <string> prerequisite_step_one_text: "1. Download WinFsp from its official release page.";
+        in-out property <string> prerequisite_step_two_text: "2. Run the MSI installer and accept its driver installation.";
+        in-out property <string> prerequisite_step_three_text: "3. Return here and select Recheck.";
+        in-out property <string> prerequisite_notice_text: "LinuxFS Manager does not download, install, or modify WinFsp for you.";
+        in-out property <string> close_text: "Close";
+        in-out property <string> download_winfsp_text: "Download WinFsp";
+        in-out property <string> recheck_text: "Recheck";
         callback download_clicked();
         callback recheck_clicked();
         callback close_clicked();
@@ -285,8 +320,8 @@ slint::slint! {
                     VerticalBox {
                         spacing: 3px;
                         Rectangle { vertical-stretch: 1; }
-                        Text { text: "WinFsp is required"; font-size: 25px; font-weight: 700; color: #17324d; }
-                        Text { text: "A Windows filesystem framework prerequisite"; font-size: 13px; color: #61758b; }
+                        Text { text: root.prerequisite_title; font-size: 25px; font-weight: 700; color: #17324d; }
+                        Text { text: root.prerequisite_subtitle; font-size: 13px; color: #61758b; }
                         Rectangle { vertical-stretch: 1; }
                     }
                 }
@@ -312,15 +347,15 @@ slint::slint! {
                     VerticalBox {
                         padding: 18px;
                         spacing: 7px;
-                        Text { text: "To continue"; font-size: 15px; font-weight: 700; color: #1d568b; }
-                        Text { text: "1. Download WinFsp from its official release page."; color: #365a7c; }
-                        Text { text: "2. Run the MSI installer and accept its driver installation."; color: #365a7c; }
-                        Text { text: "3. Return here and select Recheck."; color: #365a7c; }
+                        Text { text: root.to_continue_text; font-size: 15px; font-weight: 700; color: #1d568b; }
+                        Text { text: root.prerequisite_step_one_text; color: #365a7c; }
+                        Text { text: root.prerequisite_step_two_text; color: #365a7c; }
+                        Text { text: root.prerequisite_step_three_text; color: #365a7c; }
                     }
                 }
 
                 Text {
-                    text: "LinuxFS Manager does not download, install, or modify WinFsp for you.";
+                    text: root.prerequisite_notice_text;
                     color: #687b90;
                     font-size: 12px;
                     wrap: word-wrap;
@@ -329,14 +364,81 @@ slint::slint! {
                 HorizontalBox {
                     height: 42px;
                     spacing: 10px;
-                    Button { width: 122px; text: "Close"; clicked => { root.close_clicked(); } }
+                    Button { width: 122px; text: root.close_text; clicked => { root.close_clicked(); } }
                     Rectangle { horizontal-stretch: 1; }
-                    Button { width: 136px; text: "Download WinFsp"; clicked => { root.download_clicked(); } }
-                    Button { width: 100px; text: "Recheck"; clicked => { root.recheck_clicked(); } }
+                    Button { width: 136px; text: root.download_winfsp_text; clicked => { root.download_clicked(); } }
+                    Button { width: 100px; text: root.recheck_text; clicked => { root.recheck_clicked(); } }
                 }
             }
         }
     }
+}
+
+#[cfg(windows)]
+fn language_items(
+    copy: linuxfs_preview::localization::UiCopy,
+) -> slint::ModelRc<slint::SharedString> {
+    use slint::{ModelRc, SharedString, VecModel};
+    use std::rc::Rc;
+
+    ModelRc::from(Rc::new(VecModel::from(
+        copy.language_options()
+            .into_iter()
+            .map(SharedString::from)
+            .collect::<Vec<_>>(),
+    )))
+}
+
+#[cfg(windows)]
+fn apply_localized_copy(window: &MainWindow, copy: linuxfs_preview::localization::UiCopy) {
+    window.set_app_title(copy.app_title.into());
+    window.set_app_subtitle(copy.app_subtitle.into());
+    window.set_scan_drives_text(copy.scan_drives.into());
+    window.set_open_image_text(copy.open_image.into());
+    window.set_about_text(copy.about.into());
+    window.set_sources_text(copy.sources.into());
+    window.set_sources_subtitle_text(copy.sources_subtitle.into());
+    window.set_sources_empty_text(copy.sources_empty.into());
+    window.set_filesystem_details_text(copy.filesystem_details.into());
+    window.set_open_filesystem_image_text(copy.open_filesystem_image.into());
+    window.set_image_placeholder_text(copy.image_placeholder.into());
+    window.set_mount_text(copy.mount.into());
+    window.set_unmount_text(copy.unmount.into());
+    window.set_open_in_explorer_text(copy.open_in_explorer.into());
+    window.set_details_text(copy.details.into());
+    window.set_read_only_warning_text(copy.read_only_warning.into());
+    window.set_version_text(copy.version.into());
+    window.set_about_description_text(copy.about_description.into());
+    window.set_copyright_text(copy.copyright.into());
+    window.set_close_text(copy.close.into());
+    window.set_language_options(language_items(copy));
+}
+
+#[cfg(windows)]
+fn apply_prerequisite_copy(
+    window: &PrerequisiteWindow,
+    copy: linuxfs_preview::localization::UiCopy,
+) {
+    window.set_app_title(copy.app_title.into());
+    window.set_prerequisite_title(copy.prerequisite_title.into());
+    window.set_prerequisite_subtitle(copy.prerequisite_subtitle.into());
+    window.set_to_continue_text(copy.to_continue.into());
+    window.set_prerequisite_step_one_text(copy.prerequisite_step_one.into());
+    window.set_prerequisite_step_two_text(copy.prerequisite_step_two.into());
+    window.set_prerequisite_step_three_text(copy.prerequisite_step_three.into());
+    window.set_prerequisite_notice_text(copy.prerequisite_notice.into());
+    window.set_close_text(copy.close.into());
+    window.set_download_winfsp_text(copy.download_winfsp.into());
+    window.set_recheck_text(copy.recheck.into());
+}
+
+#[cfg(windows)]
+fn active_ui_copy(
+    copy: &std::sync::Mutex<linuxfs_preview::localization::UiCopy>,
+) -> linuxfs_preview::localization::UiCopy {
+    copy.lock().map(|copy| *copy).unwrap_or_else(|_| {
+        linuxfs_preview::localization::catalog(linuxfs_preview::localization::UiLanguage::English)
+    })
 }
 
 fn start_pending_operation<T>(
@@ -546,10 +648,12 @@ fn open_winfsp_download_page() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(windows)]
 fn run_prerequisite_gate(
     initial_assessment: &linuxfs_winfsp::WinFspAssessment,
+    copy: linuxfs_preview::localization::UiCopy,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     use std::sync::{Arc, Mutex};
 
     let window = PrerequisiteWindow::new()?;
+    apply_prerequisite_copy(&window, copy);
     let initial_state = PrerequisiteState::from_assessment(initial_assessment);
     window.set_requirement_message(initial_state.message.into());
     window.show()?;
@@ -667,7 +771,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use linuxfs_app::{
         MountService, SourceProvider, SourceViewModel, WindowsImageMountService,
         WindowsSourceProvider,
-        runtime::{BackgroundOperation, load_config, spawn_background},
+        runtime::{BackgroundOperation, config_store, load_config, spawn_background},
+    };
+    use linuxfs_preview::localization::{
+        catalog, language_from_self_name, resolve_language, windows_user_locale,
     };
     use std::{
         env,
@@ -689,9 +796,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Unmount(Result<linuxfs_app::SourceId, String>),
     }
 
+    let config = load_config().unwrap_or_default();
+    let windows_locale = windows_user_locale();
+    let resolved_language = resolve_language(config.ui_language.as_deref(), &windows_locale);
+    let copy = catalog(resolved_language);
+    let selected_language_index = config
+        .ui_language
+        .as_deref()
+        .map(|language| resolve_language(Some(language), &windows_locale).selector_index())
+        .unwrap_or(0);
+
     let mut assessment = linuxfs_winfsp::assess_winfsp();
     let _ = linuxfs_app::runtime::record_winfsp_assessment(&assessment);
-    if !assessment.is_ready() && !run_prerequisite_gate(&assessment)? {
+    if !assessment.is_ready() && !run_prerequisite_gate(&assessment, copy)? {
         return Ok(());
     }
     assessment = linuxfs_winfsp::assess_winfsp();
@@ -700,7 +817,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let config = load_config().unwrap_or_default();
     let preferred_mount_point = config
         .preferred_drive_letter
         .as_deref()
@@ -717,6 +833,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     linuxfs_winfsp::prepare_runtime()?;
     let _winfsp = winfsp::winfsp_init()?;
     let window = MainWindow::new()?;
+    apply_localized_copy(&window, copy);
+    window.set_selected_language_index(selected_language_index);
     window.show()?;
     center_main_window(&window);
     let dark_caption_window = window.as_weak();
@@ -727,21 +845,66 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     window.set_app_version(env!("LINUXFS_MANAGER_VERSION").into());
     window.set_engine_status(engine_status_text(&assessment).into());
+    window.set_status(copy.ready().into());
     let initial_path = image.unwrap_or_default();
     window.set_image_path(initial_path.clone().into());
     let state = Arc::new(Mutex::new(UiState::new(&initial_path)));
     let current_source = Arc::new(Mutex::new(None::<linuxfs_app::SourceViewModel>));
     let sources_for_ui = Arc::new(Mutex::new(Vec::<linuxfs_app::SourceViewModel>::new()));
     let pending = Arc::new(Mutex::new(None::<PendingOperation>));
+    let config = Arc::new(Mutex::new(config));
+    let active_copy = Arc::new(Mutex::new(copy));
+
+    let weak = window.as_weak();
+    let config_for_language = Arc::clone(&config);
+    let active_copy_for_language = Arc::clone(&active_copy);
+    let windows_locale_for_language = windows_locale.clone();
+    window.on_language_selected(move |value| {
+        let preference =
+            language_from_self_name(value.as_str()).map(|language| language.tag().to_owned());
+        let copy = catalog(resolve_language(
+            preference.as_deref(),
+            &windows_locale_for_language,
+        ));
+        if let Ok(mut active_copy) = active_copy_for_language.lock() {
+            *active_copy = copy;
+        }
+        let save_result = config_for_language
+            .lock()
+            .map_err(|_| "configuration lock poisoned".to_owned())
+            .and_then(|mut config| {
+                config.ui_language = preference.clone();
+                config_store()
+                    .save(&config)
+                    .map_err(|error| error.to_string())
+            });
+        if let Some(window) = weak.upgrade() {
+            apply_localized_copy(&window, copy);
+            window.set_selected_language_index(
+                preference
+                    .as_deref()
+                    .map(|language| {
+                        resolve_language(Some(language), &windows_locale_for_language)
+                            .selector_index()
+                    })
+                    .unwrap_or(0),
+            );
+            if let Err(error) = save_result {
+                window.set_status(copy.language_save_failed(&error).into());
+            }
+        }
+    });
 
     let start_probe: Arc<dyn Fn(String)> = {
         let provider = Arc::clone(&provider);
         let pending = Arc::clone(&pending);
+        let copy = Arc::clone(&active_copy);
         let weak = window.as_weak();
         Arc::new(move |path: String| {
+            let copy = active_ui_copy(&copy);
             if let Err(error) = UiState::validate_path(&path) {
                 if let Some(window) = weak.upgrade() {
-                    window.set_status(format!("Refresh failed: {error}").into());
+                    window.set_status(copy.refresh_failed(error).into());
                 }
                 return;
             }
@@ -897,7 +1060,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source_slot = Arc::clone(&current_source);
     let service_for_mount = Arc::clone(&service);
     let pending_for_mount = Arc::clone(&pending);
+    let copy_for_mount = Arc::clone(&active_copy);
     window.on_mount_clicked(move || {
+        let copy = active_ui_copy(&copy_for_mount);
         let source = source_slot
             .lock()
             .expect("source lock")
@@ -923,14 +1088,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Err(error) => {
                 if let Some(window) = weak.upgrade() {
-                    window.set_status(format!("Mount failed: {error}").into());
+                    window.set_status(copy.mount_failed(&error).into());
                 }
                 return;
             }
         };
         if let Some(window) = weak.upgrade() {
             if started {
-                window.set_status("Mounting read-only…".into());
+                window.set_status(copy.mounting().into());
                 window.set_can_mount(false);
                 window.set_can_unmount(false);
             } else {
@@ -945,7 +1110,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source_slot = Arc::clone(&current_source);
     let service_for_unmount = Arc::clone(&service);
     let pending_for_unmount = Arc::clone(&pending);
+    let copy_for_unmount = Arc::clone(&active_copy);
     window.on_unmount_clicked(move || {
+        let copy = active_ui_copy(&copy_for_unmount);
         let source = source_slot
             .lock()
             .expect("source lock")
@@ -971,14 +1138,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Err(error) => {
                 if let Some(window) = weak.upgrade() {
-                    window.set_status(format!("Unmount failed: {error}").into());
+                    window.set_status(copy.unmount_failed(&error).into());
                 }
                 return;
             }
         };
         if let Some(window) = weak.upgrade() {
             if started {
-                window.set_status("Unmounting…".into());
+                window.set_status(copy.unmounting().into());
                 window.set_can_mount(false);
                 window.set_can_unmount(false);
             } else {
@@ -992,7 +1159,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let weak = window.as_weak();
     let source_slot = Arc::clone(&current_source);
     let service_for_explorer = Arc::clone(&service);
+    let copy_for_explorer = Arc::clone(&active_copy);
     window.on_open_explorer_clicked(move || {
+        let copy = active_ui_copy(&copy_for_explorer);
         let Some(source) = source_slot.lock().ok().and_then(|source| source.clone()) else {
             if let Some(window) = weak.upgrade() {
                 window.set_status("Explorer failed: no source loaded".into());
@@ -1015,7 +1184,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         if let Some(window) = weak.upgrade() {
             match result {
-                Ok(()) => window.set_status(format!("Opened {mount_point} in Explorer").into()),
+                Ok(()) => window.set_status(copy.explorer_opened(mount_point).into()),
                 Err(error) => window.set_status(format!("Explorer failed: {error}").into()),
             }
         }
@@ -1040,11 +1209,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state_for_timer = Arc::clone(&state);
     let source_for_timer = Arc::clone(&current_source);
     let sources_for_timer = Arc::clone(&sources_for_ui);
+    let copy_for_timer = Arc::clone(&active_copy);
     let weak_for_timer = window.as_weak();
     timer.start(
         slint::TimerMode::Repeated,
         Duration::from_millis(50),
         move || {
+            let copy = active_ui_copy(&copy_for_timer);
             let Some(mut operation) = pending_for_timer
                 .lock()
                 .expect("pending operation lock")
@@ -1177,9 +1348,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .lock()
                             .expect("UI state lock")
                             .set_mounted(&point);
-                        window.set_status(
-                            format!("Mounted read-only on {point} — source unchanged").into(),
-                        );
+                        window.set_status(copy.mounted(&point).into());
                         window.set_can_mount(false);
                         window.set_can_unmount(true);
                     }
@@ -1199,7 +1368,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .lock()
                             .expect("UI state lock")
                             .set_unmounted();
-                        window.set_status("Unmount completed".into());
+                        window.set_status(copy.unmounted().into());
                         window.set_can_mount(true);
                         window.set_can_unmount(false);
                     }
@@ -1232,7 +1401,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .into(),
                             );
                         } else {
-                            window.set_status(format!("Refresh failed: {error}").into());
+                            window.set_status(copy.refresh_failed(&error).into());
                             window.set_source_name("No compatible source".into());
                             window.set_source_details(
                                 "The image could not be opened safely.".into(),
@@ -1252,12 +1421,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             window.set_can_mount(can_mount);
                             window.set_can_unmount(can_unmount);
                         }
-                        window.set_status(format!("Mount failed: {error}").into())
+                        window.set_status(copy.mount_failed(&error).into())
                     }
                     CompletedOperation::Unmount(Err(error)) => {
                         window.set_can_mount(false);
                         window.set_can_unmount(true);
-                        window.set_status(format!("Unmount failed: {error}").into())
+                        window.set_status(copy.unmount_failed(&error).into())
                     }
                 }
             }
