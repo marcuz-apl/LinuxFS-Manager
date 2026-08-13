@@ -89,6 +89,8 @@ impl UiLanguage {
         match self {
             Self::ChineseSimplified => "Microsoft YaHei UI",
             Self::ChineseTraditional => "Microsoft JhengHei UI",
+            Self::Japanese => "Yu Gothic UI",
+            Self::Korean => "Malgun Gothic",
             _ => "Segoe UI",
         }
     }
@@ -1202,7 +1204,7 @@ mod tests {
     }
 
     #[test]
-    fn chinese_languages_request_the_matching_windows_ui_font() {
+    fn east_asian_languages_request_the_matching_windows_ui_font() {
         assert_eq!(
             UiLanguage::ChineseSimplified.default_font_family(),
             "Microsoft YaHei UI"
@@ -1211,6 +1213,8 @@ mod tests {
             UiLanguage::ChineseTraditional.default_font_family(),
             "Microsoft JhengHei UI"
         );
+        assert_eq!(UiLanguage::Japanese.default_font_family(), "Yu Gothic UI");
+        assert_eq!(UiLanguage::Korean.default_font_family(), "Malgun Gothic");
     }
 
     fn temp_directory() -> std::path::PathBuf {
