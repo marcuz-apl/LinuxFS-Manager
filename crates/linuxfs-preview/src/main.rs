@@ -6,9 +6,9 @@ slint::slint! {
     export component MainWindow inherits Window {
         title: "LinuxFS Manager";
         width: 1200px;
-        height: 860px;
+        height: 820px;
         preferred-width: 1200px;
-        preferred-height: 860px;
+        preferred-height: 820px;
         background: #f5f8fc;
         icon: @image-url("../../../assets/linuxfs-manager.png");
 
@@ -256,23 +256,50 @@ fn source_items(sources: &[linuxfs_app::SourceViewModel]) -> slint::ModelRc<slin
 #[allow(unsafe_code)]
 fn center_main_window(window: &MainWindow) {
     use slint::{PhysicalPosition, WindowPosition};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+    use std::ffi::c_void;
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN, SPI_GETWORKAREA, SystemParametersInfoW,
+    };
 
     let window_size = window.window().size();
-    // SAFETY: GetSystemMetrics reads process-independent display metrics and
-    // does not require caller-owned pointers or mutable system state.
-    let screen_width = unsafe { GetSystemMetrics(SM_CXSCREEN) };
-    // SAFETY: See the screen-width call above; this is the corresponding
-    // read-only height metric.
-    let screen_height = unsafe { GetSystemMetrics(SM_CYSCREEN) };
-    let x = (screen_width - i32::try_from(window_size.width).unwrap_or(i32::MAX)) / 2;
-    let y = (screen_height - i32::try_from(window_size.height).unwrap_or(i32::MAX)) / 2;
+    let mut work_area = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: `work_area` is a valid writable RECT for the documented
+    // SPI_GETWORKAREA query; Windows writes only within that structure.
+    let got_work_area = unsafe {
+        SystemParametersInfoW(
+            SPI_GETWORKAREA,
+            0,
+            (&mut work_area as *mut RECT).cast::<c_void>(),
+            0,
+        )
+    } != 0;
+    if !got_work_area {
+        // SAFETY: GetSystemMetrics reads process-independent display metrics
+        // and does not require caller-owned pointers or mutable system state.
+        work_area.right = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+        work_area.bottom = unsafe { GetSystemMetrics(SM_CYSCREEN) };
+    }
+    let (x, y) = linuxfs_preview::centered_window_position(
+        (
+            i32::try_from(window_size.width).unwrap_or(i32::MAX),
+            i32::try_from(window_size.height).unwrap_or(i32::MAX),
+        ),
+        (
+            work_area.left,
+            work_area.top,
+            work_area.right - work_area.left,
+            work_area.bottom - work_area.top,
+        ),
+    );
     window
         .window()
-        .set_position(WindowPosition::Physical(PhysicalPosition::new(
-            x.max(0),
-            y.max(0),
-        )));
+        .set_position(WindowPosition::Physical(PhysicalPosition::new(x, y)));
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -385,6 +412,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     linuxfs_winfsp::prepare_runtime()?;
     let _winfsp = winfsp::winfsp_init()?;
     let window = MainWindow::new()?;
+    window.show()?;
     center_main_window(&window);
     window.set_app_version(env!("LINUXFS_MANAGER_VERSION").into());
     let initial_path = image.unwrap_or_default();

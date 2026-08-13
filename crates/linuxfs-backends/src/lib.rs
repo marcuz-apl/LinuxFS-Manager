@@ -123,7 +123,7 @@ mod tests {
     fn oversized_xfs_is_rejected_before_materialization() {
         let reader: Arc<dyn BlockReader> = Arc::new(MemoryReader {
             bytes: b"XFSB".to_vec(),
-            reported_len: Some(512 * 1024 * 1024 + 1),
+            reported_len: Some(2 * 1024 * 1024 * 1024 + 1),
         });
         let error = ReadOnlyBackend::open(reader)
             .err()

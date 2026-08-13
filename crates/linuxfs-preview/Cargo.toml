@@ -18,7 +18,7 @@ slint = "1.13"
 [target.'cfg(windows)'.dependencies]
 rfd = "0.15"
 winfsp = "0.13"
-windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

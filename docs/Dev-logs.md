@@ -56,4 +56,14 @@ The release workflow now always copies the reviewed `winfsp-x64.dll` beside the 
 
 ## 2026-08-13 — About text and startup window sizing
 
-The About window now lists the complete supported set: Ext2/3/4, SquashFS, and supported XFS images. The main window now starts with explicit 1200×860 dimensions, so the operating system cannot fall back to the former 860-pixel minimum-sized layout. On Windows, the startup position is calculated from the primary display metrics so the window opens centered on screen.
+The About window now lists the complete supported set: Ext2/3/4, SquashFS, and supported XFS images. The main window now starts with explicit 1200×820 dimensions, and its Windows startup position is calculated from the monitor work area so the window opens centered without covering the taskbar.
+
+## 2026-08-13 — startup centering, XFS tolerance, fixtures, and README
+
+The desktop startup path now shows the native window before positioning it and centers the 1200×820 window within the primary monitor work area, including the taskbar-safe bounds. The pure centering calculation is isolated for regression coverage; execution of the elevated preview test still requires an Administrator shell because of the application manifest.
+
+The XFS whole-image materialization ceiling is now 2 GiB instead of 512 MiB. The 64 MiB individual-file read ceiling remains unchanged because the current upstream parser still materializes file contents. Boundary tests verify that the 2 GiB limit is accepted and the next byte fails closed.
+
+Added `tools/generate-linux-fixtures.ps1`, backed by WSL `mksquashfs` and `mkfs.xfs`, to create disposable SquashFS and XFS images under `tests/fixtures-linux/generated/`. Both generated fixtures were inspected successfully through the CLI.
+
+Reworked `README.md` into a product-oriented structure covering capabilities, supported filesystems, safety guarantees, architecture, usage, prerequisites, packaging, fixtures, and development checks.

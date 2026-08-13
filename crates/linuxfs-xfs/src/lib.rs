@@ -6,7 +6,7 @@ use linuxfs_core::{
 };
 use xfs::{FileType, Inode, InodeFormat, Superblock};
 
-const MAX_MATERIALIZED_IMAGE: u64 = 512 * 1024 * 1024;
+const MAX_MATERIALIZED_IMAGE: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_MATERIALIZED_FILE: u64 = 64 * 1024 * 1024;
 
 #[derive(Clone)]
@@ -18,12 +18,7 @@ pub struct XfsReadOnlyBackend {
 impl XfsReadOnlyBackend {
     pub fn open(reader: Arc<dyn BlockReader>) -> Result<Self> {
         let length = reader.len()?;
-        if length > MAX_MATERIALIZED_IMAGE {
-            return Err(Error::new(
-                ErrorCategory::UnsupportedFeature,
-                "XFS source exceeds the safe 512 MiB reader limit; streaming XFS support is not available yet",
-            ));
-        }
+        validate_image_length(length)?;
         let size = usize::try_from(length).map_err(|_| {
             Error::new(
                 ErrorCategory::UnsupportedFeature,
@@ -79,6 +74,16 @@ impl XfsReadOnlyBackend {
             gid: 0,
         }
     }
+}
+
+fn validate_image_length(length: u64) -> Result<()> {
+    if length > MAX_MATERIALIZED_IMAGE {
+        return Err(Error::new(
+            ErrorCategory::UnsupportedFeature,
+            "XFS source exceeds the safe 2 GiB reader limit; streaming XFS support is not available yet",
+        ));
+    }
+    Ok(())
 }
 
 impl ReadOnlyFilesystem for XfsReadOnlyBackend {
@@ -192,4 +197,18 @@ fn map_error(error: xfs::XfsError) -> Error {
         ErrorCategory::FilesystemCorrupt,
         format!("XFS operation failed: {error}"),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MAX_MATERIALIZED_IMAGE, validate_image_length};
+    use linuxfs_core::ErrorCategory;
+
+    #[test]
+    fn xfs_image_limit_accepts_two_gib_but_rejects_the_next_byte() {
+        assert!(validate_image_length(MAX_MATERIALIZED_IMAGE).is_ok());
+        let error = validate_image_length(MAX_MATERIALIZED_IMAGE + 1)
+            .expect_err("the byte above the XFS ceiling must fail closed");
+        assert_eq!(error.category(), ErrorCategory::UnsupportedFeature);
+    }
 }

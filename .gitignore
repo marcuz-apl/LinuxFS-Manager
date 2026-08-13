@@ -2,3 +2,4 @@
 /dist/
 
 /tests/fixtures-ext/generated/
+/tests/fixtures-linux/generated/
