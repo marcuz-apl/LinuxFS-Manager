@@ -1,12 +1,15 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 slint::slint! {
-    import { Button, VerticalBox, HorizontalBox, GroupBox, LineEdit, ListView } from "std-widgets.slint";
+    import { Button, VerticalBox, HorizontalBox, LineEdit, ListView } from "std-widgets.slint";
 
     export component MainWindow inherits Window {
         title: "LinuxFS Manager";
-        min-width: 760px;
-        min-height: 430px;
+        preferred-width: 980px;
+        preferred-height: 620px;
+        min-width: 860px;
+        min-height: 560px;
+        background: #f5f8fc;
 
         in-out property <string> status: "Ready.";
         in-out property <string> source_name: "No source loaded";
@@ -27,57 +30,147 @@ slint::slint! {
 
         VerticalBox {
             padding: 24px;
-            spacing: 16px;
+            spacing: 14px;
 
             HorizontalBox {
-                Text { text: "LinuxFS Manager"; font-size: 28px; font-weight: 700; }
+                height: 58px;
+                spacing: 14px;
+
+                Rectangle {
+                    width: 52px;
+                    height: 52px;
+                    background: #0f5ea8;
+                    border-radius: 14px;
+
+                    Rectangle {
+                        x: 8px;
+                        y: 14px;
+                        width: 36px;
+                        height: 26px;
+                        background: #2f80d1;
+                        border-radius: 7px;
+                    }
+                    Rectangle {
+                        x: 13px;
+                        y: 19px;
+                        width: 18px;
+                        height: 3px;
+                        background: #bfe0fa;
+                    }
+                    Text {
+                        x: 30px;
+                        y: 22px;
+                        text: "✓";
+                        color: #ffffff;
+                        font-size: 16px;
+                        font-weight: 700;
+                    }
+                }
+
+                VerticalBox {
+                    spacing: 1px;
+                    Text { text: "LinuxFS Manager"; font-size: 26px; font-weight: 700; color: #17324d; }
+                    Text { text: "Read Linux filesystems safely on Windows"; font-size: 13px; color: #6b7c93; }
+                }
                 Rectangle { horizontal-stretch: 1; }
-                Button { text: "Refresh"; clicked => { root.refresh_clicked(); } }
-                Button { text: "Scan Drives"; clicked => { root.scan_drives_clicked(); } }
-                Button { text: "Open Image…"; clicked => { root.open_image_clicked(); } }
+                Button { width: 92px; text: "Refresh"; clicked => { root.refresh_clicked(); } }
+                Button { width: 112px; text: "Scan Drives"; clicked => { root.scan_drives_clicked(); } }
+                Button { width: 122px; text: "Open Image…"; clicked => { root.open_image_clicked(); } }
             }
 
             Rectangle {
-                background: #fff4d6;
-                border-radius: 6px;
-                min-height: 46px;
-                Text { text: "READ ONLY — source filesystems are never modified."; color: #714f00; vertical-alignment: center; }
+                height: 52px;
+                background: #eaf3ff;
+                border-radius: 10px;
+                border-width: 1px;
+                border-color: #cfe3f8;
+
+                Rectangle {
+                    x: 14px;
+                    y: 13px;
+                    width: 24px;
+                    height: 24px;
+                    background: #2f80d1;
+                    border-radius: 12px;
+                    Text { text: "✓"; color: #ffffff; font-size: 14px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                }
+                Text { x: 50px; text: "READ ONLY — source filesystems are never modified."; color: #1d568b; font-weight: 600; vertical-alignment: center; }
             }
 
-            GroupBox {
-                title: "Loaded source";
+            Rectangle {
+                vertical-stretch: 1;
+                background: #ffffff;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: #e0e8f1;
+
                 VerticalBox {
-                    padding: 12px;
-                    spacing: 6px;
+                    padding: 16px;
+                    spacing: 12px;
+
+                    Text { text: "Loaded source"; font-size: 16px; font-weight: 700; color: #17324d; }
+
                     HorizontalBox {
-                        spacing: 12px;
-                        ListView {
-                            width: 260px;
-                            for name[index] in root.source_names : Rectangle {
-                                height: 32px;
-                                background: root.selected_source == index ? #dce7f5 : #ffffff00;
-                                Text { text: name; vertical-alignment: center; }
-                                TouchArea { clicked => { root.source_selected(index); } }
+                        vertical-stretch: 1;
+                        spacing: 14px;
+
+                        Rectangle {
+                            width: 310px;
+                            background: #f7fafe;
+                            border-radius: 9px;
+                            border-width: 1px;
+                            border-color: #e3edf7;
+
+                            ListView {
+                                for name[index] in root.source_names : Rectangle {
+                                    height: 38px;
+                                    border-radius: 7px;
+                                    background: root.selected_source == index ? #dbeafe : #ffffff00;
+                                    Text { x: 12px; text: name; color: root.selected_source == index ? #124f86 : #38536d; vertical-alignment: center; }
+                                    TouchArea { clicked => { root.source_selected(index); } }
+                                }
                             }
                         }
+
                         VerticalBox {
-                            Text { text: source_name; font-weight: 700; }
-                            Text { text: source_details; }
+                            horizontal-stretch: 1;
+                            spacing: 6px;
+                            Rectangle {
+                                vertical-stretch: 1;
+                                background: #f9fbfd;
+                                border-radius: 9px;
+                                border-width: 1px;
+                                border-color: #e6edf5;
+                                VerticalBox {
+                                    padding: 16px;
+                                    spacing: 7px;
+                                    Text { text: "Selected source"; font-size: 12px; color: #71849a; }
+                                    Text { text: source_name; font-size: 20px; font-weight: 700; color: #17324d; }
+                                    Text { text: source_details; color: #526a83; }
+                                    Rectangle { vertical-stretch: 1; }
+                                }
+                            }
                         }
                     }
-                    LineEdit { text <=> root.image_path; placeholder-text: "CLI image path (first argument)"; }
+
+                    LineEdit { height: 38px; text <=> root.image_path; placeholder-text: "Image path (or use Open Image…)"; }
                     HorizontalBox {
-                        spacing: 8px;
-                        Button { text: "Mount"; enabled: root.can_mount; clicked => { root.mount_clicked(); } }
-                        Button { text: "Unmount"; enabled: root.can_unmount; clicked => { root.unmount_clicked(); } }
-                        Button { text: "Open in Explorer"; enabled: root.can_unmount; clicked => { root.open_explorer_clicked(); } }
-                        Button { text: "Details"; clicked => { root.details_clicked(); } }
+                        height: 40px;
+                        spacing: 10px;
+                        Button { width: 118px; text: "Mount"; enabled: root.can_mount; clicked => { root.mount_clicked(); } }
+                        Button { width: 118px; text: "Unmount"; enabled: root.can_unmount; clicked => { root.unmount_clicked(); } }
+                        Button { width: 172px; text: "Open in Explorer"; enabled: root.can_unmount; clicked => { root.open_explorer_clicked(); } }
+                        Button { width: 118px; text: "Details"; clicked => { root.details_clicked(); } }
                     }
                 }
             }
 
-            Text { text: status; color: #4a5568; }
-            Rectangle { vertical-stretch: 1; }
+            Rectangle {
+                height: 34px;
+                background: #edf2f7;
+                border-radius: 8px;
+                Text { x: 12px; text: status; color: #536579; vertical-alignment: center; }
+            }
         }
     }
 }
