@@ -10,8 +10,10 @@ slint::slint! {
         min-width: 860px;
         min-height: 560px;
         background: #f5f8fc;
+        icon: @image-url("../../../assets/linuxfs-manager.png");
 
         in-out property <string> status: "Ready.";
+        in-out property <string> app_version: "";
         in-out property <string> source_name: "No source loaded";
         in-out property <string> source_details: "Open a raw Ext image to inspect it.";
         in-out property <string> image_path: "";
@@ -76,6 +78,7 @@ slint::slint! {
                 Button { width: 92px; text: "Refresh"; clicked => { root.refresh_clicked(); } }
                 Button { width: 112px; text: "Scan Drives"; clicked => { root.scan_drives_clicked(); } }
                 Button { width: 122px; text: "Open Image…"; clicked => { root.open_image_clicked(); } }
+                Button { width: 82px; text: "About"; clicked => { about_popup.show(); } }
             }
 
             Rectangle {
@@ -170,6 +173,68 @@ slint::slint! {
                 background: #edf2f7;
                 border-radius: 8px;
                 Text { x: 12px; text: status; color: #536579; vertical-alignment: center; }
+            }
+        }
+
+        about_popup := PopupWindow {
+            width: 560px;
+            height: 420px;
+            x: (root.width - self.width) / 2;
+            y: (root.height - self.height) / 2;
+            close-policy: PopupClosePolicy.no-auto-close;
+
+            Rectangle {
+                width: 100%;
+                height: 100%;
+                background: #ffffff;
+                border-radius: 14px;
+                border-width: 1px;
+                border-color: #dce6f0;
+
+                VerticalBox {
+                    padding: 28px;
+                    spacing: 18px;
+
+                    HorizontalBox {
+                        height: 86px;
+                        spacing: 18px;
+                        Image {
+                            width: 86px;
+                            height: 86px;
+                            source: @image-url("../../../assets/linuxfs-manager.png");
+                            image-fit: contain;
+                        }
+                        VerticalBox {
+                            spacing: 4px;
+                            Rectangle { vertical-stretch: 1; }
+                            Text { text: "About LinuxFS Manager"; font-size: 24px; font-weight: 700; color: #17324d; }
+                            Text { text: "Version " + root.app_version; color: #64788f; }
+                            Rectangle { vertical-stretch: 1; }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: #e5edf5; }
+
+                    Text {
+                        text: "LinuxFS Manager provides safe, read-only access to Linux Ext2, Ext3, and Ext4 filesystems from Windows physical disks, partitions, and raw image files.";
+                        color: #405a72;
+                        wrap: word-wrap;
+                    }
+
+                    Rectangle { vertical-stretch: 1; }
+
+                    Text {
+                        text: "LinuxFS Manager, @2026 Alfazen Inc. All rights reserved.";
+                        color: #6b7c93;
+                        horizontal-alignment: center;
+                    }
+
+                    HorizontalBox {
+                        height: 40px;
+                        Rectangle { horizontal-stretch: 1; }
+                        Button { width: 100px; text: "Close"; clicked => { about_popup.close(); } }
+                    }
+                }
             }
         }
     }
@@ -297,6 +362,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     linuxfs_winfsp::prepare_runtime()?;
     let _winfsp = winfsp::winfsp_init()?;
     let window = MainWindow::new()?;
+    window.set_app_version(env!("LINUXFS_MANAGER_VERSION").into());
     let initial_path = image.unwrap_or_default();
     window.set_image_path(initial_path.clone().into());
     let state = Arc::new(Mutex::new(UiState::new(&initial_path)));

@@ -1,3 +1,5 @@
+use std::{env, fs, path::PathBuf};
+
 fn main() {
     #[cfg(windows)]
     {
@@ -19,4 +21,10 @@ fn main() {
             .compile()
             .expect("compile Windows elevation manifest");
     }
+
+    let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest dir"));
+    let version_path = manifest_dir.join("../../VERSION");
+    println!("cargo:rerun-if-changed={}", version_path.display());
+    let version = fs::read_to_string(&version_path).expect("read application version");
+    println!("cargo:rustc-env=LINUXFS_MANAGER_VERSION={}", version.trim());
 }
