@@ -1,6 +1,6 @@
 # LinuxFS Manager — Development Handoff
 
-Date: 2026-08-12
+**Date:** 2026-08-12
 
 ## Current state
 
@@ -28,8 +28,8 @@ Physical-drive discovery does not find the user’s Ext4 partitions.
 
 The user reports four HDDs. Windows reports:
 
-- Drive 0: GPT, with an unknown partition of about 1 TB;
-- Drive 3: GPT, with two Basic partitions, approximately 1.5 TB and 497 GB;
+- Drive 0: GPT, with an unknown partition of about 1 TB.
+- Drive 3: GPT, with two Basic partitions, approximately 1.5 TB and 497 GB.
 - Drives 1 and 2 are ordinary Windows disks.
 
 The application reports that no compatible Ext filesystem was found on the physical drives. This remains true when the application is launched elevated.
@@ -37,9 +37,7 @@ The application reports that no compatible Ext filesystem was found on the physi
 ## Work already attempted
 
 1. Added physical-disk enumeration for `PhysicalDrive0..31`.
-2. Added read-only Windows raw-device opening using `CreateFileW` with:
-   - `GENERIC_READ` only;
-   - `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`.
+2. Added read-only Windows raw-device opening using `CreateFileW` with `GENERIC_READ` only and `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`.
 3. Replaced normal file metadata sizing with `IOCTL_DISK_GET_LENGTH_INFO`.
 4. Added explicit Administrator elevation to the preview executable manifest.
 5. Added a dedicated `Scan Drives` button.
@@ -54,26 +52,26 @@ The development shell itself runs at medium integrity and cannot directly open `
 
 Windows Storage Management reports the disks and partitions correctly, so the remaining failure is likely in one of these areas:
 
-- raw-device reads are not returning the expected GPT bytes;
-- the GPT parser rejects the real disk layout or geometry;
-- `FileExt::seek_read` is incompatible with these raw disk handles;
-- the Linux partition starts at an offset/length not being handled correctly;
-- the Ext parser rejects the filesystem because of an unsupported feature or filesystem state;
+- Raw-device reads are not returning the expected GPT bytes.
+- The GPT parser rejects the real disk layout or geometry.
+- `FileExt::seek_read` is incompatible with these raw disk handles.
+- The Linux partition starts at an offset/length not being handled correctly.
+- The Ext parser rejects the filesystem because of an unsupported feature or filesystem state.
 - Windows volume-device probing is not actually opening the Linux volume handles.
 
 ## Next debugging work
 
 Do not change the UI first. Add a dedicated elevated diagnostic path that records, for every disk:
 
-1. successful open and reported byte length;
-2. a 512-byte read at offset 0;
-3. a 512-byte read at offset 512;
-4. the first 16 bytes of each sector in hexadecimal;
-5. GPT detection and exact GPT parser error;
-6. every partition offset and byte length;
-7. a read at each partition offset;
-8. the Ext superblock magic at partition offset + 1024;
-9. the exact `ext4_view` error.
+1. Successful open and reported byte length.
+2. A 512-byte read at offset 0.
+3. A 512-byte read at offset 512.
+4. The first 16 bytes of each sector in hexadecimal.
+5. GPT detection and exact GPT parser error.
+6. Every partition offset and byte length.
+7. A read at each partition offset.
+8. The Ext superblock magic at partition offset + 1024.
+9. The exact `ext4_view` error.
 
 Use a small elevated diagnostic executable or write a diagnostic log to `%LOCALAPPDATA%\\LinuxFS Manager\\scan.log`. Do not log file contents or modify disks.
 

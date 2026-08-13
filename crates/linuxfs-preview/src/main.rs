@@ -252,6 +252,29 @@ fn source_items(sources: &[linuxfs_app::SourceViewModel]) -> slint::ModelRc<slin
     ModelRc::from(Rc::new(VecModel::from(items)))
 }
 
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn center_main_window(window: &MainWindow) {
+    use slint::{PhysicalPosition, WindowPosition};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+
+    let window_size = window.window().size();
+    // SAFETY: GetSystemMetrics reads process-independent display metrics and
+    // does not require caller-owned pointers or mutable system state.
+    let screen_width = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+    // SAFETY: See the screen-width call above; this is the corresponding
+    // read-only height metric.
+    let screen_height = unsafe { GetSystemMetrics(SM_CYSCREEN) };
+    let x = (screen_width - i32::try_from(window_size.width).unwrap_or(i32::MAX)) / 2;
+    let y = (screen_height - i32::try_from(window_size.height).unwrap_or(i32::MAX)) / 2;
+    window
+        .window()
+        .set_position(WindowPosition::Physical(PhysicalPosition::new(
+            x.max(0),
+            y.max(0),
+        )));
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct UiState {
     image_path: String,
@@ -362,6 +385,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     linuxfs_winfsp::prepare_runtime()?;
     let _winfsp = winfsp::winfsp_init()?;
     let window = MainWindow::new()?;
+    center_main_window(&window);
     window.set_app_version(env!("LINUXFS_MANAGER_VERSION").into());
     let initial_path = image.unwrap_or_default();
     window.set_image_path(initial_path.clone().into());

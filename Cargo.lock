@@ -2581,6 +2581,7 @@ dependencies = [
  "linuxfs-winfsp",
  "rfd",
  "slint",
+ "windows-sys 0.61.2",
  "winfsp",
  "winres",
 ]
