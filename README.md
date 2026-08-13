@@ -89,7 +89,8 @@ The generator requires WSL2 with `mksquashfs` and `mkfs.xfs` (`xfsprogs`). Gener
 
 - Windows 10/11 x64 for physical-device access and desktop mounting.
 - Rust 1.97 or newer for development.
-- WinFsp installed for mounting. The portable package includes the reviewed `winfsp-x64.dll` user-mode runtime asset, but WinFsp’s Windows driver/framework remains an external prerequisite.
+- WinFsp installed for mounting. At startup, the app checks its registered installation, architecture-matched runtime DLL, `WinFsp.Launcher` service, and runtime initialization before it creates any mount service. If a check fails, the app provides an official-download link and a **Recheck** action; it never downloads, installs, or starts WinFsp itself.
+- The portable package includes the reviewed `winfsp-x64.dll` user-mode runtime asset, but that DLL alone cannot provide WinFsp’s Windows driver/framework. Each startup assessment is recorded only for diagnostics in `%LOCALAPPDATA%\LinuxFS Manager\winfsp-status.toml`; the record can never authorize a mount.
 
 Build a verified portable package with:
 

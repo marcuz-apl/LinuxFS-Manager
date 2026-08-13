@@ -98,6 +98,66 @@ pub fn initialize_logging(config: &AppConfig) -> Result<()> {
         })
 }
 
+/// Returns the diagnostic-only record path for the latest live WinFsp assessment.
+pub fn winfsp_status_path() -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            return PathBuf::from(local_app_data)
+                .join("LinuxFS Manager")
+                .join("winfsp-status.toml");
+        }
+    }
+    std::env::temp_dir()
+        .join("LinuxFS Manager")
+        .join("winfsp-status.toml")
+}
+
+/// Writes a diagnostic snapshot of a live WinFsp assessment. The record is
+/// never read to authorize mounting or bypass a fresh prerequisite check.
+pub fn record_winfsp_assessment(assessment: &linuxfs_winfsp::WinFspAssessment) -> Result<PathBuf> {
+    let path = winfsp_status_path();
+    record_winfsp_assessment_at_path(&path, assessment)?;
+    Ok(path)
+}
+
+fn record_winfsp_assessment_at_path(
+    path: &std::path::Path,
+    assessment: &linuxfs_winfsp::WinFspAssessment,
+) -> Result<()> {
+    use linuxfs_winfsp::{WinFspLauncherStatus, WinFspRequirement};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let requirement = match assessment.requirement() {
+        WinFspRequirement::Ready => "ready",
+        WinFspRequirement::UnsupportedPlatform => "unsupported_platform",
+        WinFspRequirement::InstallationNotRegistered => "installation_not_registered",
+        WinFspRequirement::RuntimeDllMissing => "runtime_dll_missing",
+        WinFspRequirement::LauncherNotInstalled => "launcher_not_installed",
+        WinFspRequirement::LauncherNotRunning => "launcher_not_running",
+        WinFspRequirement::LauncherStatusUnavailable => "launcher_status_unavailable",
+        WinFspRequirement::RuntimeInitializationFailed => "runtime_initialization_failed",
+    };
+    let launcher_service = match assessment.launcher_status() {
+        WinFspLauncherStatus::NotInstalled => "not_installed",
+        WinFspLauncherStatus::Stopped => "stopped",
+        WinFspLauncherStatus::Running => "running",
+        WinFspLauncherStatus::QueryFailed => "query_failed",
+        WinFspLauncherStatus::UnsupportedPlatform => "unsupported_platform",
+    };
+    let checked_at_utc_unix_seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let content = format!(
+        "status_version = 1\nchecked_at_utc_unix_seconds = {checked_at_utc_unix_seconds}\nstatus = \"{requirement}\"\ninstallation_registered = {}\nruntime_dll_present = {}\nlauncher_service = \"{launcher_service}\"\nruntime_initialized = {}\n",
+        assessment.installation_registered(),
+        assessment.runtime_dll_present(),
+        assessment.runtime_initialized(),
+    );
+    linuxfs_config::write_text_atomic(path, &content)
+}
+
 fn config_path() -> PathBuf {
     #[cfg(windows)]
     {
@@ -162,6 +222,7 @@ mod background_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use linuxfs_winfsp::{WinFspAssessment, WinFspLauncherStatus};
 
     #[test]
     fn config_path_is_named_for_the_application() {
@@ -187,5 +248,24 @@ mod tests {
             ..Default::default()
         })
         .expect("disabled logging");
+    }
+
+    #[test]
+    fn winfsp_status_record_is_versioned_and_diagnostic() {
+        let directory = std::env::temp_dir().join(format!(
+            "linuxfs-manager-winfsp-status-test-{}",
+            std::process::id()
+        ));
+        let path = directory.join("winfsp-status.toml");
+        let assessment =
+            WinFspAssessment::from_checks(true, true, WinFspLauncherStatus::Running, true);
+
+        record_winfsp_assessment_at_path(&path, &assessment).expect("write status record");
+
+        let content = std::fs::read_to_string(&path).expect("read status record");
+        assert!(content.contains("status_version = 1"));
+        assert!(content.contains("status = \"ready\""));
+        assert!(content.contains("launcher_service = \"running\""));
+        std::fs::remove_dir_all(directory).expect("remove test directory");
     }
 }

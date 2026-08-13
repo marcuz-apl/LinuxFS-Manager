@@ -13,18 +13,27 @@ Release artifacts should target Windows 10/11 x64. The repository name remains
 
 ## WinFsp prerequisite
 
-WinFsp is required for mounting a filesystem as a Windows-accessible drive or
-mount point. The application must check for a usable WinFsp installation before
-mounting, report a `WinFspUnavailable`-style diagnostic when it is missing or
-incompatible, and direct the user to install the supported WinFsp release from
-the official source:
+WinFsp is required before LinuxFS Manager creates its mount service. On every
+startup, the application performs a fresh, read-only assessment of the
+registered WinFsp installation, architecture-matched runtime DLL,
+`WinFsp.Launcher` service, and runtime initialization. If any check fails, the
+application opens a prerequisite screen instead of the main application and
+directs the user to install the supported WinFsp release from the official
+source:
 
-<https://winfsp.dev/>
+<https://winfsp.dev/rel/>
 
-Detection must not be represented as a successful mount. The remediation path
-should explain that WinFsp includes Windows driver components and may require
-administrator approval or a restart. The application must continue to enforce
-read-only behavior after the prerequisite is installed.
+The prerequisite screen supplies **Download WinFsp** and **Recheck** actions.
+It does not download, install, start, stop, or otherwise modify WinFsp or any
+Windows service. The user runs the official MSI and accepts its driver
+installation, then asks the app to recheck. Detection must not be represented
+as a successful mount.
+
+Every live assessment is recorded atomically at
+`%LOCALAPPDATA%\LinuxFS Manager\winfsp-status.toml`. This small TOML record
+contains diagnostic state only and is never trusted to authorize a mount or
+bypass a fresh live check. The application continues to enforce read-only
+behavior after the prerequisite is installed.
 
 ## Distribution modes
 

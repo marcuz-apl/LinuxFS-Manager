@@ -6,6 +6,99 @@ use linuxfs_core::{
 };
 use std::path::PathBuf;
 
+/// State observed for the WinFsp launcher service without changing it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WinFspLauncherStatus {
+    NotInstalled,
+    Stopped,
+    Running,
+    QueryFailed,
+    UnsupportedPlatform,
+}
+
+/// The first WinFsp prerequisite that prevents the application from starting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WinFspRequirement {
+    Ready,
+    UnsupportedPlatform,
+    InstallationNotRegistered,
+    RuntimeDllMissing,
+    LauncherNotInstalled,
+    LauncherNotRunning,
+    LauncherStatusUnavailable,
+    RuntimeInitializationFailed,
+}
+
+/// A live, diagnostic-only assessment of the installed WinFsp framework.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WinFspAssessment {
+    installation_registered: bool,
+    runtime_dll_present: bool,
+    launcher_status: WinFspLauncherStatus,
+    runtime_initialized: bool,
+}
+
+impl WinFspAssessment {
+    pub fn from_checks(
+        installation_registered: bool,
+        runtime_dll_present: bool,
+        launcher_status: WinFspLauncherStatus,
+        runtime_initialized: bool,
+    ) -> Self {
+        Self {
+            installation_registered,
+            runtime_dll_present,
+            launcher_status,
+            runtime_initialized,
+        }
+    }
+
+    pub fn requirement(&self) -> WinFspRequirement {
+        if self.launcher_status == WinFspLauncherStatus::UnsupportedPlatform {
+            return WinFspRequirement::UnsupportedPlatform;
+        }
+        if !self.installation_registered {
+            return WinFspRequirement::InstallationNotRegistered;
+        }
+        if !self.runtime_dll_present {
+            return WinFspRequirement::RuntimeDllMissing;
+        }
+        match self.launcher_status {
+            WinFspLauncherStatus::NotInstalled => WinFspRequirement::LauncherNotInstalled,
+            WinFspLauncherStatus::Stopped => WinFspRequirement::LauncherNotRunning,
+            WinFspLauncherStatus::QueryFailed => WinFspRequirement::LauncherStatusUnavailable,
+            WinFspLauncherStatus::Running => {
+                if self.runtime_initialized {
+                    WinFspRequirement::Ready
+                } else {
+                    WinFspRequirement::RuntimeInitializationFailed
+                }
+            }
+            WinFspLauncherStatus::UnsupportedPlatform => WinFspRequirement::UnsupportedPlatform,
+        }
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.requirement() == WinFspRequirement::Ready
+    }
+
+    pub fn installation_registered(&self) -> bool {
+        self.installation_registered
+    }
+
+    pub fn runtime_dll_present(&self) -> bool {
+        self.runtime_dll_present
+    }
+
+    pub fn launcher_status(&self) -> WinFspLauncherStatus {
+        self.launcher_status
+    }
+
+    pub fn runtime_initialized(&self) -> bool {
+        self.runtime_initialized
+    }
+}
+
 /// Result of checking whether the WinFsp runtime can be loaded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WinFspStatus {
@@ -31,7 +124,18 @@ impl WinFspStatus {
 
 /// Checks WinFsp availability without installing, starting, stopping, or changing anything.
 pub fn check_winfsp() -> WinFspStatus {
-    platform::check()
+    if assess_winfsp().is_ready() {
+        WinFspStatus::Available
+    } else {
+        WinFspStatus::Unavailable {
+            reason: platform::unavailable_reason(),
+        }
+    }
+}
+
+/// Performs a live, read-only WinFsp framework assessment.
+pub fn assess_winfsp() -> WinFspAssessment {
+    platform::assess()
 }
 
 /// Loads the installed WinFsp runtime from its absolute path before any
@@ -65,25 +169,55 @@ fn runtime_dll_name() -> &'static str {
 
 #[cfg(windows)]
 mod platform {
-    use super::{WinFspStatus, WinFspUnavailableReason};
+    use super::{WinFspAssessment, WinFspLauncherStatus, WinFspUnavailableReason};
     use std::path::PathBuf;
 
     pub fn prepare_runtime() -> linuxfs_core::Result<()> {
         super::load_runtime_dll()
     }
 
-    pub fn check() -> WinFspStatus {
-        if super::load_runtime_dll().is_err() {
-            return WinFspStatus::Unavailable {
-                reason: WinFspUnavailableReason::RuntimeUnavailable,
-            };
+    pub fn assess() -> WinFspAssessment {
+        let installation_registered = super::registry_installation_dir().is_some();
+        if !installation_registered {
+            return WinFspAssessment::from_checks(
+                false,
+                false,
+                WinFspLauncherStatus::NotInstalled,
+                false,
+            );
         }
-        match winfsp::winfsp_init() {
-            Ok(_init) => WinFspStatus::Available,
-            Err(_) => WinFspStatus::Unavailable {
-                reason: WinFspUnavailableReason::RuntimeUnavailable,
-            },
+
+        let runtime_dll_present = super::winfsp_runtime_path().is_some_and(|path| path.is_file());
+        if !runtime_dll_present {
+            return WinFspAssessment::from_checks(
+                true,
+                false,
+                WinFspLauncherStatus::NotInstalled,
+                false,
+            );
         }
+
+        let launcher_status = super::launcher_service_status();
+        if launcher_status != WinFspLauncherStatus::Running {
+            return WinFspAssessment::from_checks(true, true, launcher_status, false);
+        }
+
+        let runtime_initialized = super::load_runtime_dll()
+            .and_then(|()| {
+                winfsp::winfsp_init().map(|_init| ()).map_err(|error| {
+                    linuxfs_core::Error::with_source(
+                        linuxfs_core::ErrorCategory::WinFspUnavailable,
+                        "WinFsp runtime initialization failed",
+                        error,
+                    )
+                })
+            })
+            .is_ok();
+        WinFspAssessment::from_checks(true, true, launcher_status, runtime_initialized)
+    }
+
+    pub fn unavailable_reason() -> WinFspUnavailableReason {
+        WinFspUnavailableReason::RuntimeUnavailable
     }
 
     pub fn installation_dir() -> Option<PathBuf> {
@@ -93,13 +227,20 @@ mod platform {
 
 #[cfg(not(windows))]
 mod platform {
-    use super::{WinFspStatus, WinFspUnavailableReason};
+    use super::{WinFspAssessment, WinFspLauncherStatus, WinFspUnavailableReason};
     use std::path::PathBuf;
 
-    pub fn check() -> WinFspStatus {
-        WinFspStatus::Unavailable {
-            reason: WinFspUnavailableReason::UnsupportedPlatform,
-        }
+    pub fn assess() -> WinFspAssessment {
+        WinFspAssessment::from_checks(
+            false,
+            false,
+            WinFspLauncherStatus::UnsupportedPlatform,
+            false,
+        )
+    }
+
+    pub fn unavailable_reason() -> WinFspUnavailableReason {
+        WinFspUnavailableReason::UnsupportedPlatform
     }
 
     pub fn prepare_runtime() -> linuxfs_core::Result<()> {
@@ -190,6 +331,61 @@ fn registry_installation_dir() -> Option<PathBuf> {
         }
     }
     None
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn launcher_service_status() -> WinFspLauncherStatus {
+    use windows_sys::Win32::System::Services::{
+        CloseServiceHandle, OpenSCManagerW, OpenServiceW, QueryServiceStatusEx, SC_MANAGER_CONNECT,
+        SC_STATUS_PROCESS_INFO, SERVICE_QUERY_STATUS, SERVICE_RUNNING, SERVICE_STATUS_PROCESS,
+    };
+
+    // SAFETY: null pointers select the local machine and active service database. The function
+    // performs a read-only connection to the Service Control Manager.
+    let manager = unsafe { OpenSCManagerW(std::ptr::null(), std::ptr::null(), SC_MANAGER_CONNECT) };
+    if manager.is_null() {
+        return WinFspLauncherStatus::QueryFailed;
+    }
+    let service_name: Vec<u16> = "WinFsp.Launcher"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    // SAFETY: `manager` is a valid SCM handle and `service_name` is a valid, NUL-terminated
+    // UTF-16 buffer. The requested access only permits querying service status.
+    let service = unsafe { OpenServiceW(manager, service_name.as_ptr(), SERVICE_QUERY_STATUS) };
+    if service.is_null() {
+        // SAFETY: `manager` was obtained from OpenSCManagerW and is released exactly once here.
+        unsafe { CloseServiceHandle(manager) };
+        return WinFspLauncherStatus::NotInstalled;
+    }
+
+    let mut status = SERVICE_STATUS_PROCESS::default();
+    let mut bytes_needed = 0_u32;
+    // SAFETY: `service` is a valid service handle. `status` is an initialized writable buffer of
+    // the advertised size and `bytes_needed` points to writable memory. The call only queries.
+    let queried = unsafe {
+        QueryServiceStatusEx(
+            service,
+            SC_STATUS_PROCESS_INFO,
+            (&mut status as *mut SERVICE_STATUS_PROCESS).cast(),
+            std::mem::size_of::<SERVICE_STATUS_PROCESS>() as u32,
+            &mut bytes_needed,
+        )
+    };
+    // SAFETY: both handles were obtained above and each is released exactly once after the query.
+    unsafe {
+        CloseServiceHandle(service);
+        CloseServiceHandle(manager);
+    }
+    if queried == 0 {
+        return WinFspLauncherStatus::QueryFailed;
+    }
+    if status.dwCurrentState == SERVICE_RUNNING {
+        WinFspLauncherStatus::Running
+    } else {
+        WinFspLauncherStatus::Stopped
+    }
 }
 
 #[cfg(not(windows))]
@@ -339,6 +535,20 @@ mod tests {
                 reason: WinFspUnavailableReason::RuntimeUnavailable
             }
             .is_available()
+        );
+    }
+
+    #[test]
+    fn assessment_requires_every_framework_component() {
+        assert_eq!(
+            WinFspAssessment::from_checks(true, true, WinFspLauncherStatus::Running, true,)
+                .requirement(),
+            WinFspRequirement::Ready
+        );
+        assert_eq!(
+            WinFspAssessment::from_checks(true, true, WinFspLauncherStatus::Stopped, true,)
+                .requirement(),
+            WinFspRequirement::LauncherNotRunning
         );
     }
 

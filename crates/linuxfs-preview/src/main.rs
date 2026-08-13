@@ -238,6 +238,96 @@ slint::slint! {
             }
         }
     }
+
+    export component PrerequisiteWindow inherits Window {
+        title: "LinuxFS Manager — WinFsp required";
+        width: 680px;
+        height: 470px;
+        preferred-width: 680px;
+        preferred-height: 470px;
+        background: #f5f8fc;
+        icon: @image-url("../../../assets/linuxfs-manager.png");
+
+        in-out property <string> requirement_message: "WinFsp is required before LinuxFS Manager can open.";
+        callback download_clicked();
+        callback recheck_clicked();
+        callback close_clicked();
+
+        Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 100%;
+            height: 100%;
+            background: #f5f8fc;
+
+            VerticalBox {
+                padding: 34px;
+                spacing: 18px;
+
+                HorizontalBox {
+                    height: 72px;
+                    spacing: 16px;
+                    Image {
+                        width: 68px;
+                        height: 68px;
+                        source: @image-url("../../../assets/linuxfs-manager.png");
+                        image-fit: contain;
+                    }
+                    VerticalBox {
+                        spacing: 3px;
+                        Rectangle { vertical-stretch: 1; }
+                        Text { text: "WinFsp is required"; font-size: 25px; font-weight: 700; color: #17324d; }
+                        Text { text: "A Windows filesystem framework prerequisite"; font-size: 13px; color: #61758b; }
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: #dce6f0;
+                }
+
+                Text {
+                    text: requirement_message;
+                    color: #244c70;
+                    font-size: 15px;
+                    wrap: word-wrap;
+                }
+
+                Rectangle {
+                    background: #eaf3ff;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #cfe3f8;
+                    vertical-stretch: 1;
+                    VerticalBox {
+                        padding: 18px;
+                        spacing: 7px;
+                        Text { text: "To continue"; font-size: 15px; font-weight: 700; color: #1d568b; }
+                        Text { text: "1. Download WinFsp from its official release page."; color: #365a7c; }
+                        Text { text: "2. Run the MSI installer and accept its driver installation."; color: #365a7c; }
+                        Text { text: "3. Return here and select Recheck."; color: #365a7c; }
+                    }
+                }
+
+                Text {
+                    text: "LinuxFS Manager does not download, install, or modify WinFsp for you.";
+                    color: #687b90;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                }
+
+                HorizontalBox {
+                    height: 42px;
+                    spacing: 10px;
+                    Button { width: 122px; text: "Close"; clicked => { root.close_clicked(); } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { width: 136px; text: "Download WinFsp"; clicked => { root.download_clicked(); } }
+                    Button { width: 100px; text: "Recheck"; clicked => { root.recheck_clicked(); } }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -254,7 +344,7 @@ fn source_items(sources: &[linuxfs_app::SourceViewModel]) -> slint::ModelRc<slin
 
 #[cfg(windows)]
 #[allow(unsafe_code)]
-fn center_main_window(window: &MainWindow) {
+fn center_window(window: &slint::Window) {
     use slint::{PhysicalPosition, WindowPosition};
     use std::ffi::c_void;
     use windows_sys::Win32::Foundation::RECT;
@@ -262,7 +352,7 @@ fn center_main_window(window: &MainWindow) {
         GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN, SPI_GETWORKAREA, SystemParametersInfoW,
     };
 
-    let window_size = window.window().size();
+    let window_size = window.size();
     let mut work_area = RECT {
         left: 0,
         top: 0,
@@ -297,9 +387,137 @@ fn center_main_window(window: &MainWindow) {
             work_area.bottom - work_area.top,
         ),
     );
-    window
-        .window()
-        .set_position(WindowPosition::Physical(PhysicalPosition::new(x, y)));
+    window.set_position(WindowPosition::Physical(PhysicalPosition::new(x, y)));
+}
+
+#[cfg(windows)]
+fn center_main_window(window: &MainWindow) {
+    center_window(window.window());
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct PrerequisiteState {
+    visible: bool,
+    can_continue: bool,
+    message: String,
+}
+
+impl PrerequisiteState {
+    fn from_assessment(assessment: &linuxfs_winfsp::WinFspAssessment) -> Self {
+        use linuxfs_winfsp::WinFspRequirement;
+
+        let message = match assessment.requirement() {
+            WinFspRequirement::Ready => "WinFsp is ready.".to_owned(),
+            WinFspRequirement::UnsupportedPlatform => {
+                "LinuxFS Manager requires Windows with the WinFsp framework.".to_owned()
+            }
+            WinFspRequirement::InstallationNotRegistered => {
+                "WinFsp is not installed or is not registered with Windows.".to_owned()
+            }
+            WinFspRequirement::RuntimeDllMissing => {
+                "The installed WinFsp runtime DLL for this computer is missing.".to_owned()
+            }
+            WinFspRequirement::LauncherNotInstalled => {
+                "The WinFsp Launcher service is not installed.".to_owned()
+            }
+            WinFspRequirement::LauncherNotRunning => {
+                "The WinFsp Launcher service is installed but is not running.".to_owned()
+            }
+            WinFspRequirement::LauncherStatusUnavailable => {
+                "Windows could not verify the WinFsp Launcher service.".to_owned()
+            }
+            WinFspRequirement::RuntimeInitializationFailed => {
+                "The installed WinFsp runtime could not be initialized.".to_owned()
+            }
+        };
+        Self {
+            visible: !assessment.is_ready(),
+            can_continue: assessment.is_ready(),
+            message,
+        }
+    }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn open_winfsp_download_page() -> Result<(), Box<dyn std::error::Error>> {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let url: Vec<u16> = "https://winfsp.dev/rel/"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let operation: Vec<u16> = "open".encode_utf16().chain(std::iter::once(0)).collect();
+    // SAFETY: the operation and URL are owned, NUL-terminated UTF-16 buffers. ShellExecuteW
+    // is used only to request the user's configured browser open an official web page.
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            url.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if (result as isize) <= 32 {
+        return Err("Windows could not open the official WinFsp release page".into());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn run_prerequisite_gate(
+    initial_assessment: &linuxfs_winfsp::WinFspAssessment,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    use std::sync::{Arc, Mutex};
+
+    let window = PrerequisiteWindow::new()?;
+    let initial_state = PrerequisiteState::from_assessment(initial_assessment);
+    window.set_requirement_message(initial_state.message.into());
+    window.show()?;
+    center_window(window.window());
+
+    let ready_to_continue = Arc::new(Mutex::new(false));
+    let weak = window.as_weak();
+    window.on_download_clicked(move || {
+        if let Err(error) = open_winfsp_download_page()
+            && let Some(window) = weak.upgrade()
+        {
+            window.set_requirement_message(
+                format!("Could not open the download page: {error}").into(),
+            );
+        }
+    });
+    let weak = window.as_weak();
+    let ready_for_recheck = Arc::clone(&ready_to_continue);
+    window.on_recheck_clicked(move || {
+        let assessment = linuxfs_winfsp::assess_winfsp();
+        let _ = linuxfs_app::runtime::record_winfsp_assessment(&assessment);
+        let state = PrerequisiteState::from_assessment(&assessment);
+        if state.can_continue {
+            if let Ok(mut ready) = ready_for_recheck.lock() {
+                *ready = true;
+            }
+            if let Some(window) = weak.upgrade() {
+                let _ = window.hide();
+            }
+        } else if let Some(window) = weak.upgrade() {
+            window.set_requirement_message(state.message.into());
+        }
+    });
+    let weak = window.as_weak();
+    window.on_close_clicked(move || {
+        if let Some(window) = weak.upgrade() {
+            let _ = window.hide();
+        }
+    });
+    window.run()?;
+    Ok(ready_to_continue
+        .lock()
+        .map(|ready| *ready)
+        .unwrap_or(false))
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -393,6 +611,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Refresh(Result<Vec<SourceViewModel>, String>),
         Mount(Result<(linuxfs_app::SourceId, String), String>),
         Unmount(Result<linuxfs_app::SourceId, String>),
+    }
+
+    let assessment = linuxfs_winfsp::assess_winfsp();
+    let _ = linuxfs_app::runtime::record_winfsp_assessment(&assessment);
+    if !assessment.is_ready() && !run_prerequisite_gate(&assessment)? {
+        return Ok(());
     }
 
     let config = load_config().unwrap_or_default();
@@ -856,6 +1080,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prerequisite_state_blocks_startup_until_winfsp_is_ready() {
+        let unavailable =
+            PrerequisiteState::from_assessment(&linuxfs_winfsp::WinFspAssessment::from_checks(
+                false,
+                false,
+                linuxfs_winfsp::WinFspLauncherStatus::NotInstalled,
+                false,
+            ));
+        assert!(unavailable.visible);
+        assert!(!unavailable.can_continue);
+
+        let ready =
+            PrerequisiteState::from_assessment(&linuxfs_winfsp::WinFspAssessment::from_checks(
+                true,
+                true,
+                linuxfs_winfsp::WinFspLauncherStatus::Running,
+                true,
+            ));
+        assert!(!ready.visible);
+        assert!(ready.can_continue);
+    }
 
     #[test]
     fn ui_state_tracks_source_and_mount_capabilities() {
