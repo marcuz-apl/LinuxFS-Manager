@@ -32,51 +32,26 @@ slint::slint! {
         callback source_selected(int);
 
         VerticalBox {
-            padding: 24px;
-            spacing: 14px;
+            padding: 20px;
+            spacing: 16px;
 
             HorizontalBox {
                 height: 58px;
-                spacing: 14px;
+                spacing: 13px;
 
-                Rectangle {
-                    width: 52px;
-                    height: 52px;
-                    background: #0f5ea8;
-                    border-radius: 14px;
-
-                    Rectangle {
-                        x: 8px;
-                        y: 14px;
-                        width: 36px;
-                        height: 26px;
-                        background: #2f80d1;
-                        border-radius: 7px;
-                    }
-                    Rectangle {
-                        x: 13px;
-                        y: 19px;
-                        width: 18px;
-                        height: 3px;
-                        background: #bfe0fa;
-                    }
-                    Text {
-                        x: 30px;
-                        y: 22px;
-                        text: "✓";
-                        color: #ffffff;
-                        font-size: 16px;
-                        font-weight: 700;
-                    }
+                Image {
+                    width: 44px;
+                    height: 44px;
+                    source: @image-url("../../../assets/linuxfs-manager.png");
+                    image-fit: contain;
                 }
 
                 VerticalBox {
-                    spacing: 1px;
-                    Text { text: "LinuxFS Manager"; font-size: 26px; font-weight: 700; color: #17324d; }
-                    Text { text: "Read Linux filesystems safely on Windows"; font-size: 13px; color: #6b7c93; }
+                    spacing: 2px;
+                    Text { text: "LinuxFS Manager"; font-size: 25px; font-weight: 700; color: #102a43; }
+                    Text { text: "Read Linux filesystems safely on Windows"; font-size: 13px; color: #58718a; }
                 }
                 Rectangle { horizontal-stretch: 1; }
-                Button { width: 92px; text: "Refresh"; clicked => { root.refresh_clicked(); } }
                 Button { width: 112px; text: "Scan Drives"; clicked => { root.scan_drives_clicked(); } }
                 Button { width: 122px; text: "Open Image…"; clicked => { root.open_image_clicked(); } }
                 Button { width: 82px; text: "About"; clicked => { about_popup.show(); } }
@@ -85,100 +60,123 @@ slint::slint! {
             Rectangle {
                 vertical-stretch: 1;
                 background: #ffffff;
-                border-radius: 12px;
+                border-radius: 14px;
                 border-width: 1px;
-                border-color: #e0e8f1;
+                border-color: #d9e4ee;
 
-                VerticalBox {
-                    padding: 16px;
-                    spacing: 12px;
+                HorizontalBox {
+                    spacing: 0px;
 
-                    Text { text: "Loaded source"; font-size: 16px; font-weight: 700; color: #17324d; }
-
-                    HorizontalBox {
-                        vertical-stretch: 1;
-                        spacing: 14px;
-
-                        Rectangle {
-                            width: 310px;
-                            background: #f7fafe;
-                            border-radius: 9px;
-                            border-width: 1px;
-                            border-color: #e3edf7;
-
-                            ListView {
-                                for name[index] in root.source_names : Rectangle {
-                                    height: 38px;
-                                    border-radius: 7px;
-                                    background: root.selected_source == index ? #dbeafe : #ffffff00;
-                                    Text { x: 12px; text: name; color: root.selected_source == index ? #124f86 : #38536d; vertical-alignment: center; }
-                                    TouchArea { clicked => { root.source_selected(index); } }
-                                }
-                            }
-                        }
+                    Rectangle {
+                        width: 316px;
+                        background: #102a43;
+                        border-radius: 14px;
 
                         VerticalBox {
-                            horizontal-stretch: 1;
-                            spacing: 6px;
-                            Rectangle {
+                            padding: 20px;
+                            spacing: 8px;
+                            Text { text: "Sources"; font-size: 19px; font-weight: 700; color: #ffffff; }
+                            Text { text: "Partitions and image files"; font-size: 12px; color: #aec6d9; }
+                            Rectangle { height: 1px; background: #2a4963; }
+                            Rectangle { height: 4px; }
+
+                            if (root.source_names.length == 0) : Text {
+                                text: "Scan your drives or open an image to begin.";
+                                color: #b8ccdc;
+                                wrap: word-wrap;
+                            }
+
+                            ListView {
                                 vertical-stretch: 1;
-                                background: #f9fbfd;
-                                border-radius: 9px;
-                                border-width: 1px;
-                                border-color: #e6edf5;
-                                VerticalBox {
-                                    padding: 16px;
-                                    spacing: 7px;
-                                    Text { text: "Selected source"; font-size: 12px; color: #71849a; }
-                                    Text { text: source_name; font-size: 20px; font-weight: 700; color: #17324d; }
-                                    Text { text: source_details; color: #526a83; }
-                                    Rectangle { vertical-stretch: 1; }
+                                for name[index] in root.source_names : Rectangle {
+                                    height: 46px;
+                                    border-radius: 8px;
+                                    background: root.selected_source == index ? #1e5c88 : #ffffff00;
+                                    Text {
+                                        x: 12px;
+                                        width: parent.width - 24px;
+                                        text: name;
+                                        color: root.selected_source == index ? #ffffff : #d3e2ee;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                    TouchArea { clicked => { root.source_selected(index); } }
                                 }
                             }
                         }
                     }
 
-                    LineEdit { height: 38px; text <=> root.image_path; placeholder-text: "Image path (or use Open Image…)"; }
-                    HorizontalBox {
-                        height: 40px;
-                        spacing: 10px;
-                        Button { width: 118px; text: "Mount"; enabled: root.can_mount; clicked => { root.mount_clicked(); } }
-                        Button { width: 118px; text: "Unmount"; enabled: root.can_unmount; clicked => { root.unmount_clicked(); } }
-                        Button { width: 172px; text: "Open in Explorer"; enabled: root.can_unmount; clicked => { root.open_explorer_clicked(); } }
-                        Button { width: 118px; text: "Details"; clicked => { root.details_clicked(); } }
+                    VerticalBox {
+                        horizontal-stretch: 1;
+                        padding: 28px;
+                        spacing: 18px;
+
+                        Text { text: source_name; font-size: 24px; font-weight: 700; color: #102a43; overflow: elide; }
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                            background: #f4f8fb;
+                            border-radius: 12px;
+                            border-width: 1px;
+                            border-color: #e2ebf2;
+
+                            VerticalBox {
+                                padding: 20px;
+                                spacing: 9px;
+                                Text { text: "Filesystem details"; font-size: 15px; font-weight: 700; color: #173b57; }
+                                Text { text: source_details; color: #4f687d; wrap: word-wrap; }
+                                Rectangle { vertical-stretch: 1; }
+                            }
+                        }
+
+                        VerticalBox {
+                            spacing: 7px;
+                            Text { text: "Open a filesystem image"; font-size: 14px; font-weight: 700; color: #173b57; }
+                            LineEdit { height: 40px; text <=> root.image_path; placeholder-text: "Image path (or use Open Image…)"; }
+                        }
+
+                        HorizontalBox {
+                            height: 42px;
+                            spacing: 10px;
+                            Button { width: 118px; primary: true; text: "Mount"; enabled: root.can_mount; clicked => { root.mount_clicked(); } }
+                            Button { width: 118px; text: "Unmount"; enabled: root.can_unmount; clicked => { root.unmount_clicked(); } }
+                            Button { width: 172px; text: "Open in Explorer"; enabled: root.can_unmount; clicked => { root.open_explorer_clicked(); } }
+                            Button { width: 118px; text: "Details"; clicked => { root.details_clicked(); } }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
                     }
                 }
             }
 
             Rectangle {
-                height: 64px;
-                background: #edf5fb;
-                border-radius: 10px;
-                border-width: 1px;
-                border-color: #d8e5f0;
+                height: 66px;
+                background: #102a43;
+                border-radius: 12px;
 
                 Rectangle {
-                    x: 14px;
-                    y: 18px;
-                    width: 8px;
-                    height: 28px;
-                    background: #267d53;
-                    border-radius: 4px;
+                    x: 18px;
+                    y: 22px;
+                    width: 9px;
+                    height: 22px;
+                    background: #48b981;
+                    border-radius: 5px;
                 }
                 Text {
-                    x: 36px;
+                    x: 42px;
                     y: 8px;
                     text: "READ ONLY — source filesystems are never modified.";
-                    color: #245f47;
+                    color: #ffffff;
                     font-size: 13px;
                     font-weight: 700;
                 }
                 Text {
-                    x: 36px;
-                    y: 32px;
+                    x: 42px;
+                    y: 34px;
+                    width: parent.width - 62px;
                     text: engine_status + "  ·  " + status;
-                    color: #46627a;
+                    color: #b7cede;
                     font-size: 12px;
+                    overflow: elide;
                 }
             }
         }

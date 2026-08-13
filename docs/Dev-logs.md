@@ -9,6 +9,14 @@
 - **Desktop polish:** Added the app icon, larger default window, About dialog, version propagation from `VERSION`, and the polished source-selection UI.
 - **Current extension:** Routed all consumers through a backend registry and added SquashFS plus bounded XFS image support without adding source writes.
 
+## 2026-08-13 — file-manager workspace polish
+
+The main Slint window now uses a dark navy **Sources** rail for detected partitions and image files, plus a bright workspace for the selected source, filesystem details, image path, and mount commands. The selected source state remains backed by the existing source model and callback; scanning, opening images, mounting, unmounting, Explorer access, and details behavior are unchanged.
+
+**Mount** is now the only primary action. **Unmount**, **Open in Explorer**, and **Details** retain their existing enabled-state behavior as secondary controls. The read-only guarantee, WinFsp engine assessment, and current operation result remain continuously visible together in a compact bottom status strip.
+
+Validation for this presentation-only update included Slint compilation, the Impeccable layout inspection, workspace formatting and Clippy checks, the non-preview workspace test suite, a workspace build, and an optimized portable package with `winfsp-x64.dll` included.
+
 ## 2026-08-13 — push and filesystem backend extension
 
 ### Starting point
