@@ -73,3 +73,10 @@ The release workflow now always copies the reviewed `winfsp-x64.dll` beside the
 executable and into the portable ZIP. `tools/package-release.ps1` searches the
 registered WinFsp installation or accepts `-WinFspDll`, then verifies both
 output locations before completing.
+
+## 2026-08-13 — About text and startup window sizing
+
+The About window now lists the complete supported set: Ext2/3/4, SquashFS, and
+supported XFS images. The main window now starts with explicit 1200×860
+dimensions, so the operating system cannot fall back to the former 860-pixel
+minimum-sized layout.

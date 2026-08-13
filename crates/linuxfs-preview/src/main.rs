@@ -5,17 +5,17 @@ slint::slint! {
 
     export component MainWindow inherits Window {
         title: "LinuxFS Manager";
-        preferred-width: 980px;
-        preferred-height: 620px;
-        min-width: 860px;
-        min-height: 560px;
+        width: 1200px;
+        height: 860px;
+        preferred-width: 1200px;
+        preferred-height: 860px;
         background: #f5f8fc;
         icon: @image-url("../../../assets/linuxfs-manager.png");
 
         in-out property <string> status: "Ready.";
         in-out property <string> app_version: "";
         in-out property <string> source_name: "No source loaded";
-        in-out property <string> source_details: "Open a raw Ext image to inspect it.";
+        in-out property <string> source_details: "Open a raw Linux filesystem image to inspect it.";
         in-out property <string> image_path: "";
         in-out property <bool> can_mount: false;
         in-out property <bool> can_unmount: false;
@@ -216,7 +216,7 @@ slint::slint! {
                     Rectangle { height: 1px; background: #e5edf5; }
 
                     Text {
-                        text: "LinuxFS Manager provides safe, read-only access to Linux Ext2, Ext3, and Ext4 filesystems from Windows physical disks, partitions, and raw image files.";
+                        text: "LinuxFS Manager provides safe, read-only access to Ext2/3/4, SquashFS, and supported XFS images from Windows physical disks, partitions, and raw image files.";
                         color: #405a72;
                         wrap: word-wrap;
                     }
@@ -267,7 +267,7 @@ impl UiState {
         Self {
             image_path: path.to_owned(),
             source_name: "No source loaded".to_owned(),
-            source_details: "Open a raw Ext image to inspect it.".to_owned(),
+            source_details: "Open a raw Linux filesystem image to inspect it.".to_owned(),
             status: "Ready.".to_owned(),
             can_mount: false,
             can_unmount: false,
@@ -697,7 +697,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             window.set_source_name("No compatible physical source".into());
                             window.set_source_details(
-                                "No supported Ext filesystem was found, or Windows denied raw-disk access. Run elevated to scan physical disks.".into(),
+                                "No supported Linux filesystem was found, or Windows denied raw-disk access. Run elevated to scan physical disks.".into(),
                             );
                             window.set_can_mount(false);
                             window.set_can_unmount(false);
